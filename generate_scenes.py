@@ -140,7 +140,7 @@ def main(argv=None):
     arguments = list(sys.argv[1:] if argv is None else argv)
     probe = argparse.ArgumentParser(add_help=False)
     probe.add_argument("input", nargs="?")
-    for flag in ("--config", "--output", "--name", "--resume", "--workers",
+    for flag in ("--config", "--briefs", "--output", "--name", "--resume", "--workers",
                  "--seed", "--max-attempts", "--retry-base", "--retry-cap",
                  "--retry-seconds", "--retry-max-seconds", "--max-redesigns"):
         probe.add_argument(flag)

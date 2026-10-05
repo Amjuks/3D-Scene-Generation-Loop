@@ -222,6 +222,10 @@ class Batch:
 
     def scene_task(self, task):
         prompt = task['prompt']
+        briefs = self.state.get('briefs', {})
+        for instruction in (briefs.get('common'), briefs.get('categories', {}).get(task['category'])):
+            if instruction:
+                prompt += '\n\n' + instruction
         if task.get('repair_feedback'):
             prompt += '\n\nPrevious design failed validation. Generate a NEW layout preserving the requested concept, addressing these diagnostics (not instructions):\n' + task['repair_feedback']
         seed = int.from_bytes(hashlib.sha256(f"{self.state['seed']}:{task['id']}:{task.get('redesigns', 0)}".encode()).digest()[:8], 'big')
@@ -387,6 +391,8 @@ class Batch:
                     request = {'category': category, 'count': min(5, count-offset),
                                'offset': offset, 'seed': int.from_bytes(hashlib.sha256(f"{self.state['seed']}:{category}".encode()).digest()[:8], 'big'),
                                'retry_index': checkpoint['attempts'] - 1,
+                               'briefs': {'common': self.state.get('briefs', {}).get('common', ''),
+                                          'category': self.state.get('briefs', {}).get('categories', {}).get(category, '')},
                                'previous_candidates': checkpoint.get('previous_candidates'),
                                'rejection_feedback': checkpoint.get('rejection_feedback') or (checkpoint.get('error') if checkpoint.get('previous_candidates') is None else None),
                                'existing': [{k: t[k] for k in ('name', 'prompt', 'diversity')} for t in self.state['tasks']]}
@@ -591,12 +597,17 @@ def prepare(args):
         path = args.resume.expanduser().resolve()
         if not (path / 'progress.json').is_file():
             raise ValueError('Resume path must contain progress.json')
-        if args.categories or args.name or args.config:
-            raise ValueError('--resume uses saved categories, name, and config; do not supply those again')
+        if args.categories or args.name or args.config or getattr(args, 'briefs', None):
+            raise ValueError('--resume uses saved categories, name, config, and briefs; do not supply those again')
         return path
     if args.categories is None:
         raise ValueError('Provide categories.yaml or --resume BATCH')
     categories = categories_file(args.categories)
+    briefs = read_json(args.briefs.expanduser().resolve()) if getattr(args, 'briefs', None) else {}
+    if not isinstance(briefs, dict) or set(briefs) - {'common', 'categories'} or not isinstance(briefs.get('common', ''), str) or not isinstance(briefs.get('categories', {}), dict):
+        raise ValueError('Briefs must be a JSON object with common text and an optional categories mapping')
+    if any(k not in categories or not isinstance(v, str) for k, v in briefs.get('categories', {}).items()):
+        raise ValueError('Category briefs must contain text keyed by an input category name')
     name = args.name or datetime.now(timezone.utc).strftime('batch-%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,100}', name) or name in ('.', '..'):
         raise ValueError('--name must be a safe folder name (letters, numbers, dots, underscores, hyphens)')
@@ -615,7 +626,7 @@ def prepare(args):
     config['storage'].setdefault('min_free_bytes', 2000000000)
     atomic_json(path / 'config.json', config)
     atomic_json(path / 'progress.json', {'version': 1, 'name': name, 'categories': categories,
-                                       'seed': args.seed, 'config': str(path / 'config.json'),
+                                       'seed': args.seed, 'config': str(path / 'config.json'), 'briefs': briefs,
                                        'created_epoch': time.time(), 'status': 'prepared', 'tasks': [], 'planning': {}})
     return path
 
@@ -627,6 +638,7 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=ROOT / 'scene-runs')
     parser.add_argument('--resume', type=Path)
     parser.add_argument('--config', type=Path)
+    parser.add_argument('--briefs', type=Path, help='JSON with common and category-specific scene constraints; saved for resume')
     parser.add_argument('--workers', type=int, default=1)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--dry-run', action='store_true')

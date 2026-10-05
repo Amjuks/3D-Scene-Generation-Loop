@@ -105,6 +105,9 @@ Use `--workers 2` for two concurrent scenes, `--dry-run` to prepare without mode
 calls, or `--plan-only` to generate prompts only. Defaults allow eight attempts
 per scene/planning chunk and two fresh redesigns; limits persist across resumes.
 An existing batch name requires `--resume`.
+Use `--briefs path/to/briefs.json` to add shared and category-specific constraints
+without changing taxonomy names. Briefs are saved with the batch and reused on
+resume; [the single-room briefs](examples/single-room/briefs.json) show the format.
 
 For existing prompts, put one complete prompt per line in `prompts.txt`:
 

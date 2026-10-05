@@ -55,6 +55,21 @@ class BatchTests(unittest.TestCase):
         with patch.object(self.batch, 'launch', side_effect=launch):
             self.assertTrue(self.batch.plan())
 
+    def test_briefs_persist_and_reach_planning_and_scene_prompts(self):
+        self.args.name = 'with-briefs'
+        self.args.briefs = self.root / 'briefs.json'
+        module.atomic_json(self.args.briefs, {'common': 'Exactly one room.', 'categories': {'museum': 'One exhibit room.'}})
+        batch = module.Batch(module.prepare(self.args), self.args, Path('/fake/loop'))
+        self.batch = batch
+        self.plan()
+        request = module.read_json(next((batch.path / 'planning/category-001-00000').glob('attempt-*/request.json')))
+        self.assertEqual(request['category'], 'museum')
+        self.assertEqual(request['briefs'], {'common': 'Exactly one room.', 'category': 'One exhibit room.'})
+        resumed = module.Batch(batch.path, self.args, Path('/fake/loop'))
+        prompt = resumed.scene_task(resumed.state['tasks'][0])['prompt']
+        self.assertIn('Exactly one room.', prompt)
+        self.assertIn('One exhibit room.', prompt)
+
     def test_configuration_failure_blocks_across_resumes_without_redesign(self):
         self.plan()
         self.batch.state['tasks'] = self.batch.state['tasks'][:1]
