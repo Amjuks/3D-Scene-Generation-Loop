@@ -50,9 +50,38 @@ Create `scene-config.json`. Replace the model ID if your endpoint uses another:
 ```
 
 This uses one model for all text roles. Numerical/export checks remain enabled.
-Optional visual review requires an image-capable model configured for the
-`visual_reviewer` role; see [the configuration types](crates/loop-scene/src/config.rs).
 Model requests and retries can incur charges. Keep several GB of disk space free.
+
+### Optional visual validation
+
+To review rendered images with a vision model, add this `roles` object inside
+`models` in your configuration:
+
+```json
+"roles": {
+  "visual_reviewer": {
+    "model": "YOUR_VISION_MODEL_ID",
+    "requires_images": true
+  }
+}
+```
+
+Set `quality.require_visual_review` to `true`. The reviewer model must be
+registered in Loop's model catalog with image-input support; setting
+`requires_images` does not make a text-only model accept images. The default
+model continues to handle text planning.
+
+Check the configuration before starting:
+
+```bash
+target/debug/loop scene doctor --config scene-config.json
+```
+
+For existing batches, update the saved batch configuration; existing scene runs
+use their own `input/resolved-config.json` snapshots. Editing the original example
+configuration does not update those snapshots.
+
+### Start a batch
 
 For a batch, create `categories.yaml` with category names and positive counts:
 
