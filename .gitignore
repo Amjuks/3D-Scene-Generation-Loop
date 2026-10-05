@@ -1,0 +1,31 @@
+/target/
+**/*.rs.bk
+.idea/
+.vscode/
+*.swp
+.DS_Store
+/docs/
+
+# Benchmark run logs (keep template + sample committed)
+/bench/runs/runs.csv
+/bench/runs/scorecard*.md
+/bench/runs/out/
+/bench
+
+# Local Python caches
+__pycache__/
+*.py[cod]
+
+# Local scene-generation outputs and temporary validation artifacts
+/scene-runs/
+/scene-production-*/batches/
+/scene-production-*/prompt-runs/
+/scene-production-*/prompt-library/
+/scene-production-*/previews/
+/scene-production-*/final/
+/scene-production-*/.verify-*/
+*.blend1
+
+# Local logs and generated reports
+*.log
+preflight.log

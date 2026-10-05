@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "models": {
+    "provider": "soket",
+    "default_model": "qwen3-8-27b",
+    "fallback_models": [],
+    "compact_planning": true
+  },
+  "backend": {
+    "generator": "blender",
+    "variation": "procedural_pbr_v1",
+    "preview_renderer": "cycles",
+    "exports": [
+      "blend",
+      "glb"
+    ]
+  },
+  "quality": {
+    "preset": "high",
+    "preview_resolution": [
+      1920,
+      1440
+    ],
+    "preview_samples": 128,
+    "require_visual_review": false
+  },
+  "execution": {
+    "max_agent_tasks": 1,
+    "max_blender_processes": 1,
+    "max_gpu_renders": 1,
+    "task_timeout_seconds": 1200
+  },
+  "storage": {
+    "min_free_bytes": 5000000000
+  }
+}

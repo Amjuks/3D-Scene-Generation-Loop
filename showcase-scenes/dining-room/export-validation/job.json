@@ -1,0 +1,7 @@
+{
+  "mode": "validate_exports",
+  "blend": "/home/aman/loop/showcase-scenes/dining-room/scene.blend",
+  "glb": "/home/aman/loop/showcase-scenes/dining-room/scene.glb",
+  "output_dir": "/home/aman/loop/showcase-scenes/dining-room/export-validation",
+  "translation_tolerance_m": 0.001
+}

@@ -1,0 +1,76 @@
+{
+  "coordinate_system": "RH_M_ZUP_XEAST_YNORTH",
+  "gltf_mapping": "(x,y,z)->(x,z,-y)",
+  "renderer": "BLENDER_EEVEE_NEXT",
+  "resolution": [
+    1280,
+    720
+  ],
+  "samples": 32,
+  "cameras": [
+    {
+      "id": "exterior_three_quarter",
+      "path": "/home/aman/loop/showcase-scenes/dining-room/exterior_three_quarter.png",
+      "position": [
+        -10.0,
+        -11.600000381469727,
+        8.350000381469727
+      ],
+      "target": [
+        0.0,
+        0.0,
+        1.5499999523162842
+      ],
+      "lens_mm": 46.0,
+      "coverage": "exterior_or_layout"
+    },
+    {
+      "id": "north_elevation",
+      "path": "/home/aman/loop/showcase-scenes/dining-room/north_elevation.png",
+      "position": [
+        0.0,
+        14.399999618530273,
+        4.349999904632568
+      ],
+      "target": [
+        0.0,
+        0.0,
+        1.5499999523162842
+      ],
+      "lens_mm": 46.0,
+      "coverage": "exterior_or_layout"
+    },
+    {
+      "id": "overhead",
+      "path": "/home/aman/loop/showcase-scenes/dining-room/overhead.png",
+      "position": [
+        0.0,
+        0.0,
+        18.75
+      ],
+      "target": [
+        0.0,
+        0.0,
+        1.5499999523162842
+      ],
+      "lens_mm": 46.0,
+      "coverage": "exterior_or_layout"
+    },
+    {
+      "id": "interior_scene",
+      "path": "/home/aman/loop/showcase-scenes/dining-room/interior_scene.png",
+      "position": [
+        -2.559999942779541,
+        -1.6799999475479126,
+        1.5499999523162842
+      ],
+      "target": [
+        0.0,
+        0.0,
+        1.350000023841858
+      ],
+      "lens_mm": 30.0,
+      "coverage": "interior"
+    }
+  ]
+}

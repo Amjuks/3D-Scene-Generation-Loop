@@ -1,0 +1,444 @@
+#!/usr/bin/env python3
+# Blender 4.5 scene generator – Japandi Reading / Oak Dining / Walnut Studio
+# Usage: blender --background --python this_script.py -- --scene_name japandi_reading --output_dir /tmp/out
+
+import bpy, bmesh, sys, os, json, math, mathutils
+from pathlib import Path
+
+# ---------- Argument handling ----------
+argv = sys.argv
+if "--" in argv:
+    idx = argv.index("--")
+    args = argv[idx+1:]
+else:
+    args = []
+def get(arg, default=None):
+    try: return args[args.index(arg)+1]
+    except: return default
+scene_name = get("--scene_name", "japandi_reading")
+out_dir = Path(get("--output_dir", "."))
+
+# ---------- Utility functions ----------
+def clear():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+
+def smooth(obj):
+    for p in obj.data.polygons: p.use_smooth = True
+
+def bevel(obj, width=0.02, segments=3):
+    mod = obj.modifiers.new("Bevel", "BEVEL")
+    mod.width = width
+    mod.segments = segments
+    mod.limit_method = 'NONE'
+
+def create_material(name, nodes_func):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+    out = nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+    links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    nodes_func(nodes, links, bsdf)
+    return mat
+
+def add_plane(name, size, location, rotation=(0,0,0)):
+    bpy.ops.mesh.primitive_plane_add(size=1, location=location, rotation=rotation)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.scale = (size[0]/2, size[1]/2, 1)
+    return obj
+
+def add_cube(name, size, location):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=location)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.scale = (size[0]/2, size[1]/2, size[2]/2)
+    return obj
+
+def add_cylinder(name, radius, depth, location, rotation=(0,0,0)):
+    bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=depth, location=location, rotation=rotation)
+    obj = bpy.context.active_object
+    obj.name = name
+    return obj
+
+def add_curve(name, points, closed=False):
+    curve = bpy.data.curves.new(name, 'CURVE')
+    curve.dimensions = '3D'
+    poly = curve.splines.new('POLY')
+    poly.points.add(len(points)-1)
+    for i, pt in enumerate(points):
+        poly.points[i].co = (*pt, 1)
+    poly.use_cyclic_u = closed
+    obj = bpy.data.objects.new(name, curve)
+    bpy.context.collection.objects.link(obj)
+    return obj
+
+def look_at(obj, target):
+    direction = mathutils.Vector(target) - obj.location
+    rot_quat = direction.to_track_quat('-Z', 'Y')
+    obj.rotation_euler = rot_quat.to_euler()
+
+# ---------- Scene setup ----------
+clear()
+bpy.context.scene.render.engine = 'CYCLES'
+bpy.context.scene.cycles.device = 'CPU'
+bpy.context.scene.cycles.samples = 48
+bpy.context.scene.cycles.use_denoising = True
+bpy.context.scene.render.resolution_x = 1400
+bpy.context.scene.render.resolution_y = 1000
+bpy.context.scene.render.film_transparent = False
+
+# Camera
+cam_data = bpy.data.cameras.new("Cam")
+cam_obj = bpy.data.objects.new("Cam", cam_data)
+bpy.context.collection.objects.link(cam_obj)
+cam_obj.location = (3, -6, 2.2)
+look_at(cam_obj, (0, 0.6, 1.1))
+cam_data.lens = 35
+bpy.context.scene.camera = cam_obj
+
+# Room dimensions
+room_w, room_d = 5.5, 4.7
+room_h = 2.8
+
+# Floor (plank texture)
+floor = add_plane("Floor", (room_w, room_d), (0,0,0))
+floor_mat = create_material("FloorWood", lambda n,l,bs: (
+    n.new("ShaderNodeTexWave","Wave"),
+    n["Wave"].inputs["Scale"].default_value = 12,
+    n["Wave"].inputs["Distortion"].default_value = 0.5,
+    n["Wave"].inputs["Detail"].default_value = 2,
+    n["Wave"].wave_type = 'BANDS',
+    n["Wave"].band_direction = 'X',
+    n["Wave"].inputs["Amplitude"].default_value = 0.08,
+    n["Wave"].use_color_ramp = True,
+    n["Wave"].color_ramp.elements[0].position = 0,
+    n["Wave"].color_ramp.elements[1].position = 1,
+    n["Wave"].color_ramp.elements[0].color = (0.22,0.14,0.09,1),
+    n["Wave"].color_ramp.elements[1].color = (0.28,0.20,0.15,1),
+    n.new("ShaderNodeBump","Bump"),
+    n["Bump"].inputs["Strength"].default_value = 0.05,
+    n["Bump"].inputs["Distance"].default_value = 0.1,
+    n["Bump"].inputs["Height"].default_value = 0.1,
+    n.new("ShaderNodeMapping","Map"),
+    n["Map"].inputs["Scale"].default_value = (10,1,1),
+    l.new("ShaderNodeTexCoord","UV"),
+    l["UV"].outputs["Generated"].link(n["Map"].inputs["Vector"]),
+    n["Map"].outputs["Vector"].link(n["Wave"].inputs["Vector"]),
+    n["Wave"].outputs["Color"].link(n["Bump"].inputs["Height"]),
+    n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+))
+floor.data.materials.append(floor_mat)
+smooth(floor)
+
+# Walls (plaster)
+def make_wall(name, size, location, rotation):
+    wall = add_plane(name, size, location, rotation)
+    wall_mat = create_material(f"{name}_Mat", lambda n,l,bs: (
+        n.new("ShaderNodeTexNoise","Noise"),
+        n["Noise"].inputs["Scale"].default_value = 15,
+        n["Noise"].inputs["Detail"].default_value = 2,
+        n["Noise"].inputs["Roughness"].default_value = 0.4,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.02,
+        n["Bump"].inputs["Distance"].default_value = 0.05,
+        n["Noise"].outputs["Fac"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    wall_mat.diffuse_color = (0.94,0.92,0.89,1)
+    wall.data.materials.append(wall_mat)
+    smooth(wall)
+    return wall
+
+# Back wall
+back = make_wall("BackWall", (room_w, room_h), (0, room_d/2, room_h/2), (math.radians(90),0,0))
+# Left wall
+left = make_wall("LeftWall", (room_d, room_h), (-room_w/2, 0, room_h/2), (math.radians(90),0,math.radians(90)))
+# Right wall
+right = make_wall("RightWall", (room_d, room_h), (room_w/2, 0, room_h/2), (math.radians(90),0,math.radians(-90)))
+
+# Window opening (large vertical)
+win_w, win_h = 2.2, 1.6
+win = add_cube("Window", (win_w, 0.05, win_h), (0, room_d/2 - 0.025, 1.2))
+win_mat = create_material("WindowGlass", lambda n,l,bs: (
+    n.new("ShaderNodeBsdfPrincipled","Glass"),
+    n["Glass"].inputs["Transmission"].default_value = 0.95,
+    n["Glass"].inputs["Roughness"].default_value = 0.01,
+    n["Glass"].inputs["Base Color"].default_value = (0.9,0.95,1,1),
+    n["Glass"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"])
+))
+win.data.materials.append(win_mat)
+win.hide_render = False
+
+# Curtains (linen)
+def curtain(side):
+    cur = add_plane(f"Curtain_{side}", (win_w/2, win_h), (0,0,0))
+    cur.location = ( -win_w/4 if side=="L" else win_w/4, room_d/2 - 0.05, 1.2 )
+    cur.rotation_euler = (0,0,0)
+    cur_mat = create_material(f"Curtain_{side}_Mat", lambda n,l,bs: (
+        n.new("ShaderNodeTexNoise","Noise"),
+        n["Noise"].inputs["Scale"].default_value = 8,
+        n["Noise"].inputs["Detail"].default_value = 2,
+        n["Noise"].inputs["Roughness"].default_value = 0.5,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.04,
+        n["Noise"].outputs["Fac"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    cur_mat.diffuse_color = (0.9,0.85,0.8,1)
+    cur.data.materials.append(cur_mat)
+    smooth(cur)
+    return cur
+curtain("L")
+curtain("R")
+
+# ---------- Variant-specific content ----------
+def japandi_reading():
+    # Rug
+    rug = add_plane("Rug", (2.0,1.5), (0,0,0.01))
+    rug_mat = create_material("RugMat", lambda n,l,bs: (
+        n.new("ShaderNodeTexVoronoi","Vor"),
+        n["Vor"].inputs["Scale"].default_value = 5,
+        n["Vor"].inputs["Randomness"].default_value = 0.8,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.03,
+        n["Vor"].outputs["Distance"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    rug_mat.diffuse_color = (0.75,0.7,0.65,1)
+    rug.data.materials.append(rug_mat)
+    smooth(rug)
+
+    # Lounge chair (timber frame + sage padded seat)
+    seat = add_cylinder("ChairSeat", 0.3, 0.04, (0, -0.8, 0.5))
+    seat_mat = create_material("SeatMat", lambda n,l,bs: (
+        n.new("ShaderNodeBsdfPrincipled","Principled"),
+        n["Principled"].inputs["Base Color"].default_value = (0.6,0.8,0.65,1),
+        n["Principled"].inputs["Roughness"].default_value = 0.4,
+        n["Principled"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"])
+    ))
+    seat.data.materials.append(seat_mat)
+    # Frame
+    frame = add_cylinder("ChairFrame", 0.04, 1.0, (0, -0.8, 0.5))
+    frame.rotation_euler = (math.radians(90),0,0)
+    wood_mat = create_material("WoodMat", lambda n,l,bs: (
+        n.new("ShaderNodeTexWave","Wave"),
+        n["Wave"].wave_type = 'RINGS',
+        n["Wave"].inputs["Scale"].default_value = 18,
+        n["Wave"].inputs["Distortion"].default_value = 0.2,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.05,
+        n["Wave"].outputs["Color"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    wood_mat.diffuse_color = (0.55,0.45,0.33,1)
+    frame.data.materials.append(wood_mat)
+    bevel(frame, 0.005)
+    smooth(frame)
+
+    # Ottoman
+    ott = add_cylinder("Ottoman", 0.25, 0.1, (0.6, -0.6, 0.05))
+    ott.data.materials.append(seat_mat)
+    smooth(ott)
+
+    # Round side table
+    tbl = add_cylinder("SideTable", 0.35, 0.45, (-0.6, -0.6, 0.225))
+    tbl.data.materials.append(wood_mat)
+    bevel(tbl, 0.01)
+    smooth(tbl)
+
+    # Fabric shade lamp
+    shade = add_cylinder("LampShade", 0.2, 0.025, (0.6, -0.6, 0.6))
+    shade_mat = create_material("FabricMat", lambda n,l,bs: (
+        n.new("ShaderNodeTexNoise","Noise"),
+        n["Noise"].inputs["Scale"].default_value = 12,
+        n["Noise"].inputs["Detail"].default_value = 2,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.04,
+        n["Noise"].outputs["Fac"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    shade_mat.diffuse_color = (0.85,0.8,0.75,1)
+    shade.data.materials.append(shade_mat)
+    # Lamp base
+    base = add_cylinder("LampBase", 0.07, 0.5, (0.6, -0.6, 0.3))
+    base.data.materials.append(wood_mat)
+    # Light source
+    light = bpy.data.lights.new(name="LampLight", type='AREA')
+    light.energy = 250
+    light.shape = 'DISK'
+    light.size = 0.3
+    light_obj = bpy.data.objects.new("LampLightObj", light)
+    light_obj.location = (0.6,-0.6,0.66)
+    bpy.context.collection.objects.link(light_obj)
+
+    # Bookshelves (simple)
+    shelf = add_cube("Bookshelf", (1.2,0.3,2.0), (-1.2,0,1.0))
+    shelf_mat = wood_mat
+    shelf.data.materials.append(shelf_mat)
+    bevel(shelf,0.015)
+    smooth(shelf)
+
+    # Ceramics (vases)
+    for i in range(3):
+        vase = add_cylinder(f"Vase_{i}", 0.08, 0.25, (-1.2+0.2*i,0.1,0.125))
+        vase_mat = create_material(f"VaseMat_{i}", lambda n,l,bs: (
+            n.new("ShaderNodeBsdfPrincipled","Principled"),
+            n["Principled"].inputs["Base Color"].default_value = (0.8-0.1*i,0.6,0.5+i*0.1,1),
+            n["Principled"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"]
+        )))
+        vase.data.materials.append(vase_mat)
+        smooth(vase)
+
+    # Artwork (plane)
+    art = add_plane("Artwork", (1.0,0.7), (0,room_d/2-0.02,1.5))
+    art.rotation_euler = (math.radians(90),0,0)
+    art_mat = create_material("ArtMat", lambda n,l,bs: (
+        n.new("ShaderNodeBsdfDiffuse","Diff"),
+        n["Diff"].inputs["Color"].default_value = (0.2,0.3,0.4,1),
+        n["Diff"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"]
+    )))
+    art.data.materials.append(art_mat)
+
+    # Curved leaf plant (simple curve + sphere)
+    leaf = add_curve("LeafCurve", [(-0.2,0,0.0), (0,0,0.3), (0.2,0,0.6)], closed=False)
+    leaf.data.bevel_depth = 0.02
+    leaf.data.bevel_resolution = 4
+    leaf.data.materials.append(wood_mat)
+    sphere = add_cylinder("LeafTip", 0.03, 0.06, (0.2,0,0.6))
+    sphere.data.materials.append(wood_mat)
+
+def oak_dining():
+    # Dining table
+    tbl = add_cube("OakTable", (2.2,1.0,0.08), (0,0,0.4))
+    oak_mat = create_material("OakMat", lambda n,l,bs: (
+        n.new("ShaderNodeTexWood","Wood"),
+        n["Wood"].inputs["Scale"].default_value = 5,
+        n["Wood"].inputs["Detail"].default_value = 2,
+        n["Wood"].inputs["Distortion"].default_value = 0.2,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.06,
+        n["Wood"].outputs["Color"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    oak_mat.diffuse_color = (0.55,0.44,0.33,1)
+    tbl.data.materials.append(oak_mat)
+    bevel(tbl,0.01)
+    smooth(tbl)
+
+    # Chairs (6)
+    for i in range(6):
+        ang = i*math.radians(60)
+        x = 0.9*math.cos(ang)
+        y = 0.9*math.sin(ang)
+        chair = add_cube(f"Chair_{i}", (0.45,0.45,0.9), (x,y,0.45))
+        chair.data.materials.append(oak_mat)
+        bevel(chair,0.008)
+        smooth(chair)
+
+    # Pendant light cluster
+    for i in range(3):
+        light = bpy.data.lights.new(name=f"Pendant{i}", type='POINT')
+        light.energy = 300
+        light_obj = bpy.data.objects.new(f"PendantObj{i}", light)
+        light_obj.location = (0,0,1.6 + i*0.2)
+        bpy.context.collection.objects.link(light_obj)
+
+    # Tableware (simple cylinders)
+    for i in range(4):
+        cup = add_cylinder(f"Cup_{i}", 0.04, 0.1, (0.2*i-0.3,0,0.45))
+        cup.data.materials.append(create_material(f"CupMat_{i}", lambda n,l,bs: (
+            n.new("ShaderNodeBsdfPrincipled","Principled"),
+            n["Principled"].inputs["Base Color"].default_value = (0.9,0.9,0.95,1),
+            n["Principled"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"]
+        ))))
+        smooth(cup)
+
+def walnut_studio():
+    # Desk
+    desk = add_cube("Desk", (1.6,0.7,0.8), (0,0,0.4))
+    walnut_mat = create_material("WalnutMat", lambda n,l,bs: (
+        n.new("ShaderNodeTexWave","Wave"),
+        n["Wave"].wave_type = 'RINGS',
+        n["Wave"].inputs["Scale"].default_value = 25,
+        n["Wave"].inputs["Distortion"].default_value = 0.3,
+        n.new("ShaderNodeBump","Bump"),
+        n["Bump"].inputs["Strength"].default_value = 0.07,
+        n["Wave"].outputs["Color"].link(n["Bump"].inputs["Height"]),
+        n["Bump"].outputs["Normal"].link(bs.inputs["Normal"])
+    ))
+    walnut_mat.diffuse_color = (0.35,0.22,0.13,1)
+    desk.data.materials.append(walnut_mat)
+    bevel(desk,0.012)
+    smooth(desk)
+
+    # Monitor
+    mon = add_cube("Monitor", (0.4,0.04,0.3), (0,0.35,0.75))
+    mon_mat = create_material("ScreenMat", lambda n,l,bs: (
+        n.new("ShaderNodeEmission","Emit"),
+        n["Emit"].inputs["Color"].default_value = (0.1,0.1,0.12,1),
+        n["Emit"].inputs["Strength"].default_value = 0.2,
+        n["Emit"].outputs["Emission"].link(l["Material Output"].inputs["Surface"]
+    )))
+    mon.data.materials.append(mon_mat)
+
+    # Keyboard
+    kb = add_cube("Keyboard", (0.45,0.2,0.03), (0,0.2,0.66))
+    kb_mat = create_material("KbMat", lambda n,l,bs: (
+        n.new("ShaderNodeBsdfPrincipled","Principled"),
+        n["Principled"].inputs["Base Color"].default_value = (0.2,0.2,0.2,1),
+        n["Principled"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"]
+    )))
+    kb.data.materials.append(kb_mat)
+
+    # Chair (padded)
+    chair = add_cube("StudioChair", (0.5,0.5,0.9), (-0.8,0,0.45))
+    chair.data.materials.append(walnut_mat)
+    bevel(chair,0.008)
+    smooth(chair)
+    pad = add_cylinder("ChairPad", 0.25, 0.05, (-0.8,0,0.85))
+    pad_mat = create_material("PadMat", lambda n,l,bs: (
+        n.new("ShaderNodeBsdfPrincipled","Principled"),
+        n["Principled"].inputs["Base Color"].default_value = (0.6,0.7,0.6,1),
+        n["Principled"].outputs["BSDF"].link(l["Material Output"].inputs["Surface"]
+    )))
+    pad.data.materials.append(pad_mat)
+    smooth(pad)
+
+# ---------- Build scene ----------
+if scene_name == "japandi_reading":
+    japandi_reading()
+elif scene_name == "oak_dining":
+    oak_dining()
+elif scene_name == "walnut_studio":
+    walnut_studio()
+else:
+    raise ValueError(f"Unknown scene: {scene_name}")
+
+# ---------- Rendering ----------
+out_dir.mkdir(parents=True, exist_ok=True)
+bpy.context.scene.render.filepath = str(out_dir / "hero.png")
+bpy.ops.render.render(write_still=True)
+
+# ---------- Export ----------
+blend_path = out_dir / f"{scene_name}.blend"
+bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+
+glb_path = out_dir / f"{scene_name}.glb"
+bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format='GLB', export_apply=True)
+
+# ---------- Manifest ----------
+manifest = {
+    "scene_name": scene_name,
+    "materials": [mat.name for mat in bpy.data.materials],
+    "glb_limits": {
+        "max_materials": 256,
+        "note": "GLTF2 limits to 256 unique materials; script keeps under this."
+    }
+}
+with open(out_dir / "manifest.json", "w") as f:
+    json.dump(manifest, f, indent=2)
+
+print(f"Scene '{scene_name}' exported to {out_dir}")

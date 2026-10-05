@@ -1,0 +1,21 @@
+version: 1
+tasks:
+  - id: reading_room
+    enabled: true
+    seed: 101
+    prompt: >
+      A detailed Japandi reading room with an upholstered oak lounge chair,
+      populated bookshelves, linen curtains, a real window opening, ceramics,
+      a woven rug, and warm natural daylight. Physically plausible construction.
+  - id: dining_room
+    enabled: true
+    seed: 202
+    prompt: >
+      A contemporary oak dining room for six with upholstered chairs, tableware,
+      linen runner, two pendant lamps, a sideboard and soft window daylight.
+  - id: home_office
+    enabled: true
+    seed: 303
+    prompt: >
+      A walnut home studio with a detailed desk, monitor, individual keyboard
+      keys, upholstered chairs, brass desk lamp, books, ceramics and indoor plants.

@@ -1,0 +1,20 @@
+version: 1
+models:
+  provider: soket
+  default_model: gpt-oss-120b
+backend:
+  generator: blender
+  variation: procedural_pbr_v1
+  preview_renderer: cycles
+  exports: [blend, glb]
+quality:
+  preview_resolution: [1600, 1200]
+  preview_samples: 64
+  require_visual_review: true
+storage:
+  output_root: ./prompt-runs
+  asset_library: ./prompt-library
+  min_free_bytes: 2000000000
+# This uses the existing prompt controller. Its recipe geometry is simpler than
+# build_scenes.py. A verified image-capable reviewer must be configured for
+# unattended visual acceptance; no model capability is invented here.

@@ -1,0 +1,1868 @@
+{
+  "schema_version": 1,
+  "root_id": "scene",
+  "prompt_summary": "A refined oak dining room for six with warm contemporary styling",
+  "coordinate_system": "RH_M_ZUP_XEAST_YNORTH",
+  "nodes": [
+    {
+      "schema_version": 1,
+      "node_id": "scene",
+      "revision": 1,
+      "kind": "room",
+      "parent_id": null,
+      "child_ids": [
+        "floor",
+        "rear_wall",
+        "left_wall",
+        "right_wall",
+        "dining_table",
+        "chair_1",
+        "chair_2",
+        "chair_3",
+        "chair_4",
+        "chair_5",
+        "chair_6",
+        "sideboard",
+        "plant",
+        "floor_lamp"
+      ],
+      "purpose": "A refined oak dining room for six with warm contemporary styling",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed room for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -4,
+          -3,
+          -0.15
+        ],
+        "max": [
+          4,
+          3,
+          3.25
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "warm_oak",
+          "description": "warm oak",
+          "base_color": [
+            0.34,
+            0.16,
+            0.055,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "assembly",
+        "recipe": "assembly",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "floor",
+      "revision": 1,
+      "kind": "floor",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase floor",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed floor for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -4,
+          -3,
+          0
+        ],
+        "max": [
+          4,
+          3,
+          0.12
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "quarter_sawn_oak",
+          "description": "quarter sawn oak",
+          "base_color": [
+            0.32,
+            0.145,
+            0.045,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.38,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "floor",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "rear_wall",
+      "revision": 1,
+      "kind": "wall",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase wall",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed wall for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0,
+          2.92,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -4,
+          -0.06,
+          0
+        ],
+        "max": [
+          4,
+          0.06,
+          3.1
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "warm_plaster",
+          "description": "warm plaster",
+          "base_color": [
+            0.72,
+            0.68,
+            0.59,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.82,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "wall",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "left_wall",
+      "revision": 1,
+      "kind": "wall",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase wall",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed wall for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          -3.92,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.06,
+          -3,
+          0
+        ],
+        "max": [
+          0.06,
+          3,
+          3.1
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "warm_plaster",
+          "description": "warm plaster",
+          "base_color": [
+            0.72,
+            0.68,
+            0.59,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.82,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "wall",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "right_wall",
+      "revision": 1,
+      "kind": "wall",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase wall",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed wall for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          3.92,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.06,
+          -3,
+          0
+        ],
+        "max": [
+          0.06,
+          3,
+          3.1
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "warm_plaster",
+          "description": "warm plaster",
+          "base_color": [
+            0.72,
+            0.68,
+            0.59,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.82,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "wall",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "dining_table",
+      "revision": 1,
+      "kind": "table",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase table",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed table for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -1.2,
+          -0.55,
+          0
+        ],
+        "max": [
+          1.2,
+          0.55,
+          0.78
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "quarter_sawn_oak",
+          "description": "quarter sawn oak",
+          "base_color": [
+            0.32,
+            0.145,
+            0.045,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.38,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "table",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "chair_1",
+      "revision": 1,
+      "kind": "chair",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase chair",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed chair for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          -0.72,
+          -1.05,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.28,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.28,
+          0.3,
+          1.02
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "woven_sage",
+          "description": "woven sage",
+          "base_color": [
+            0.18,
+            0.28,
+            0.2,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.72,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "chair",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "chair_2",
+      "revision": 1,
+      "kind": "chair",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase chair",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed chair for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0.72,
+          -1.05,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.28,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.28,
+          0.3,
+          1.02
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "woven_sage",
+          "description": "woven sage",
+          "base_color": [
+            0.18,
+            0.28,
+            0.2,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.72,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "chair",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "chair_3",
+      "revision": 1,
+      "kind": "chair",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase chair",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed chair for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          -0.72,
+          1.05,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          1.0,
+          6.123233995736766e-17
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.28,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.28,
+          0.3,
+          1.02
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "woven_sage",
+          "description": "woven sage",
+          "base_color": [
+            0.18,
+            0.28,
+            0.2,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.72,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "chair",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "chair_4",
+      "revision": 1,
+      "kind": "chair",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase chair",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed chair for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0.72,
+          1.05,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          1.0,
+          6.123233995736766e-17
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.28,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.28,
+          0.3,
+          1.02
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "woven_sage",
+          "description": "woven sage",
+          "base_color": [
+            0.18,
+            0.28,
+            0.2,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.72,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "chair",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "chair_5",
+      "revision": 1,
+      "kind": "chair",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase chair",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed chair for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          -1.65,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          -0.7071067811865475,
+          0.7071067811865476
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.28,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.28,
+          0.3,
+          1.02
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "woven_sage",
+          "description": "woven sage",
+          "base_color": [
+            0.18,
+            0.28,
+            0.2,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.72,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "chair",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "chair_6",
+      "revision": 1,
+      "kind": "chair",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase chair",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed chair for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          1.65,
+          0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0.7071067811865475,
+          0.7071067811865476
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.28,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.28,
+          0.3,
+          1.02
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "woven_sage",
+          "description": "woven sage",
+          "base_color": [
+            0.18,
+            0.28,
+            0.2,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.72,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "chair",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "sideboard",
+      "revision": 1,
+      "kind": "cabinet",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase cabinet",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed cabinet for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          0,
+          2.55,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.9,
+          -0.24,
+          0
+        ],
+        "max": [
+          0.9,
+          0.24,
+          1.05
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "dark_walnut",
+          "description": "dark walnut",
+          "base_color": [
+            0.115,
+            0.045,
+            0.018,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.34,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "cabinet",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "plant",
+      "revision": 1,
+      "kind": "plant",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase plant",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed plant for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          3.15,
+          2.15,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.35,
+          -0.35,
+          0
+        ],
+        "max": [
+          0.35,
+          0.35,
+          1.65
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "warm_oak",
+          "description": "warm oak",
+          "base_color": [
+            0.34,
+            0.16,
+            0.055,
+            1
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "plant",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    },
+    {
+      "schema_version": 1,
+      "node_id": "floor_lamp",
+      "revision": 1,
+      "kind": "lamp",
+      "parent_id": "scene",
+      "child_ids": [],
+      "purpose": "Showcase lamp",
+      "required_features": [
+        "credible construction",
+        "grounded contact"
+      ],
+      "assumptions": [
+        "Standard real-world dimensions"
+      ],
+      "design": "Detailed lamp for a realistic interior.",
+      "construction_instructions": "Use believable thickness, softened edges, and physical contact.",
+      "units": "m",
+      "transform": {
+        "translation": [
+          -3.1,
+          2.0,
+          0
+        ],
+        "rotation_xyzw": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "pivot_local": [
+        0,
+        0,
+        0
+      ],
+      "local_front": [
+        0,
+        -1,
+        0
+      ],
+      "local_up": [
+        0,
+        0,
+        1
+      ],
+      "bounds_local": {
+        "min": [
+          -0.3,
+          -0.3,
+          0
+        ],
+        "max": [
+          0.3,
+          0.3,
+          1.9
+        ]
+      },
+      "usable_volume_local": null,
+      "child_regions": [],
+      "placement_region": null,
+      "interfaces": [],
+      "relationships": [],
+      "construction": {},
+      "materials": [
+        {
+          "material_id": "aged_brass",
+          "description": "aged brass",
+          "base_color": [
+            0.42,
+            0.25,
+            0.07,
+            1
+          ],
+          "metallic": 0.75,
+          "roughness": 0.24,
+          "texture_scale_m": 0.7,
+          "texture_ref": null
+        }
+      ],
+      "generation": {
+        "strategy": "recipe",
+        "recipe": "lamp",
+        "parameters": {},
+        "seed": 42,
+        "detail_policy": "high",
+        "required_capabilities": [
+          "pbr_materials"
+        ]
+      },
+      "acceptance": {
+        "numeric_rules": {
+          "contact_tolerance_m": 0.005
+        },
+        "visual_requirements": [
+          "believable proportions",
+          "coherent material scale"
+        ],
+        "review_views": [
+          "exterior_three_quarter",
+          "overhead",
+          "interior"
+        ],
+        "evidence_refs": []
+      },
+      "provenance": {
+        "owning_task": "local-showcase",
+        "parent_revision": 1,
+        "dependency_hashes": [],
+        "model": "local-authored",
+        "prompt_version": "local-showcase-v1",
+        "recipe_version": "procedural_pbr_v1",
+        "source_url": null,
+        "creator": "Loop local backend",
+        "license": "generated-local",
+        "validation_status": "pending"
+      }
+    }
+  ]
+}

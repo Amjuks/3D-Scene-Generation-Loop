@@ -1,0 +1,37 @@
+{
+  "scenes": [
+    {
+      "name": "dining-room",
+      "output": "/home/aman/loop/showcase-scenes/dining-room",
+      "parity": true,
+      "renders": [
+        "/home/aman/loop/showcase-scenes/dining-room/exterior_three_quarter.png",
+        "/home/aman/loop/showcase-scenes/dining-room/interior_scene.png",
+        "/home/aman/loop/showcase-scenes/dining-room/north_elevation.png",
+        "/home/aman/loop/showcase-scenes/dining-room/overhead.png"
+      ]
+    },
+    {
+      "name": "reading-room",
+      "output": "/home/aman/loop/showcase-scenes/reading-room",
+      "parity": true,
+      "renders": [
+        "/home/aman/loop/showcase-scenes/reading-room/exterior_three_quarter.png",
+        "/home/aman/loop/showcase-scenes/reading-room/interior_scene.png",
+        "/home/aman/loop/showcase-scenes/reading-room/north_elevation.png",
+        "/home/aman/loop/showcase-scenes/reading-room/overhead.png"
+      ]
+    },
+    {
+      "name": "executive-office",
+      "output": "/home/aman/loop/showcase-scenes/executive-office",
+      "parity": true,
+      "renders": [
+        "/home/aman/loop/showcase-scenes/executive-office/exterior_three_quarter.png",
+        "/home/aman/loop/showcase-scenes/executive-office/interior_scene.png",
+        "/home/aman/loop/showcase-scenes/executive-office/north_elevation.png",
+        "/home/aman/loop/showcase-scenes/executive-office/overhead.png"
+      ]
+    }
+  ]
+}

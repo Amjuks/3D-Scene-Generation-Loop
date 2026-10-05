@@ -1,0 +1,17 @@
+version: 1
+tasks:
+  - id: table_001
+    enabled: true
+    prompt: >
+      A realistic solid-oak dining table with visible joinery, a gently beveled
+      top, four well-supported legs, and photographic studio lighting.
+    seed: 42
+  - id: room_001
+    enabled: false
+    prompt: >
+      A realistic furnished reading room with a real door opening, a window,
+      oak shelves, an armchair, side table, warm lamps, and multiple interior views.
+    seed: 84
+    overrides:
+      quality:
+        preview_resolution: [1920, 1080]

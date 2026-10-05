@@ -1,0 +1,24 @@
+version: 1
+models:
+  provider: soket
+  default_model: gemma-4-31b
+  compact_planning: true
+  fallback_models: [gpt, qwen3-8-27b]
+  roles:
+    scene_director:
+      model: gemma-4-31b
+      timeout_seconds: 600
+      max_tokens: 8192
+backend:
+  generator: blender
+  variation: procedural_pbr_v1
+  preview_renderer: cycles
+  exports: [blend, glb]
+quality:
+  preview_resolution: [1600, 1200]
+  preview_samples: 64
+  require_visual_review: false
+storage:
+  output_root: ../scene-runs/museums
+  asset_library: ../scene-runs/library
+  min_free_bytes: 2000000000

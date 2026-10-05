@@ -1,0 +1,44 @@
+version: 1
+backend:
+  generator: blender
+  variation: procedural_pbr_v1
+  preview_renderer: eevee
+  viewer: threejs
+  exports: [blend, glb]
+  required_blender_version: "4.5"
+models:
+  provider: soket
+  default_model: qwen3-30b
+  # Add `roles.reviewer` with an image-capable model ID exposed by your Soket
+  # catalog. Doctor intentionally blocks visual acceptance until one is set.
+embedding:
+  backend: semantic_hash_v1
+  model: loop-semantic-hash-en-1
+  dimensions: 384
+execution:
+  max_agent_tasks: 1
+  max_blender_processes: 1
+  max_gpu_renders: 1
+  task_timeout_seconds: 600
+recovery:
+  transient_retries_before_escalation: 3
+  repair_attempts_per_strategy: 3
+  external_retry_max_backoff_seconds: 300
+quality:
+  containment_tolerance_m: 0.005
+  relative_tolerance: 0.00001
+  connector_tolerance_m: 0.001
+  connector_tolerance_degrees: 0.1
+  preview_resolution: [1280, 720]
+  preview_samples: 32
+  preset: standard
+  require_visual_review: true
+storage:
+  output_root: ./scene-runs
+  asset_library: ./scene-library
+  min_free_bytes: 1000000000
+assets:
+  reuse: true
+  allow_downloads: false
+  max_download_bytes: 50000000
+  allowed_licenses: [CC0-1.0, CC-BY-4.0, user-provided, generated-local]
