@@ -4,7 +4,13 @@
     "provider": "soket",
     "default_model": "qwen3-8-27b",
     "fallback_models": [],
-    "compact_planning": true
+    "compact_planning": true,
+    "roles": {
+      "visual_reviewer": {
+        "model": "gpt-oss-120b",
+        "requires_images": true
+      }
+    }
   },
   "backend": {
     "generator": "blender",

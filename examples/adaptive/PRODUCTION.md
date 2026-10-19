@@ -148,3 +148,46 @@ Unchanged or invalid proposals are returned for bounded correction before
 another render is spent. Source-material UV application covers structural
 recipes as well as explicit profiles; glass/hardware remain separate.
 Component cache keys include the actual Blender worker-source fingerprint.
+
+
+## Recovering an existing category batch
+
+Inspect `progress.md` and the individual logs first. Source gaps and spending
+limits now stop automatic retries instead of triggering identical work. After
+supplying missing sources, use `--retry-asset-blocked`. Keep original run inputs
+immutable when changing production targets or model configuration:
+
+```bash
+python3 scene_batch.py --resume /path/to/batch \
+  --recover-config /path/to/production-config.json --dry-run
+python3 scene_batch.py --resume /path/to/batch --workers 2 --max-attempts 10
+```
+
+The first command saves a versioned config and queues fresh attempts for unfinished
+scenes. It preserves original prompts, accepted outputs, archived attempts and
+lifetime attempt counters. Choose an explicit total attempt limit appropriate to
+the existing count; this example permits two more attempts after eight failures.
+A task may carry explicit `overrides`, for example intentional voxel style with
+image review, while other tasks use realistic fidelity. Configuration recovery
+does not procure missing components or certify the output.
+
+Program connections can specify one shared `world_at` point inside both region
+envelopes. Legacy local `at`/`target_at` pairs remain supported; do not mix the two
+representations. Validation reports every bad connection with numerical evidence.
+Visual repairs use compact authoring data and changed-object patches. Request-
+hashed raw model responses survive schema errors for safe reparse after a parser
+fix; historical logs without a matching request hash remain diagnostic evidence.
+
+Exhausted response-schema corrections stop the batch task; fix the exact reported
+field or model contract before using `--retry-schema-blocked`. Image-review schema
+correction keeps the original images attached and has one bounded attempt. Its
+raw checkpoint includes actual image bytes, scene context and model settings;
+replay does not add duplicate token charges or infer missing coverage as passing.
+
+Program planning records its catalogue context so later source additions do not
+force a new spatial design. Dependency review uses the current catalogue and can
+bind a suitable exact source ID to existing region owners. Regional compilation
+requires those owners to actually use the bound source; normal source hashes,
+license/type/use checks and final visual review still apply. Custom fabrication
+is reviewed separately from real anatomical/species/scan dependencies. An authored
+construction plan alone is never evidence of production-quality appearance.

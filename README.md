@@ -151,6 +151,11 @@ Fix the logged cause before raising `--max-attempts` or `--max-redesigns`.
 Credential/configuration blockers require `--retry-auth-blocked` or
 `--retry-config-blocked` after correction. `--retry-budget-blocked` retries a
 budget-blocked scene after its saved budget is reviewed; it does not raise budgets.
+Missing sources stop automatic retries until `--retry-asset-blocked` is supplied.
+Exhausted response-format corrections similarly require `--retry-schema-blocked`
+after fixing the model contract or parser. To apply a revised production config,
+use `--recover-config /path/to/config.json` with `--resume`: this creates a versioned
+config and fresh unfinished-scene attempts, preserving historical inputs and counters.
 
 ```bash
 # Inspect or resume one scene (pass its run folder, not the batch folder).

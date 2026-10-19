@@ -212,9 +212,10 @@ Actual Blender scripts: `tests/blender_asset_geometry_check.py`,
 
 ## Next work
 
-1. Improve material selection, terrain presentation and scene-authored lighting.
-2. Expand curated domain-specific assets and run the cross-category benchmark.
-3. Implement measured LOD/chunking/scattering before claiming huge-world readiness.
+1. Recover `collection-60-1` with actionable geometry diagnostics and production settings.
+2. Finish landscape visual corrections; preserve rejected results and source gaps.
+3. Expand exact domain-specific sources and cross-category visual validation.
+4. Implement streamed world chunks and richer terrain/surface authoring before claiming huge-world readiness.
 
 ## Production workflow extension (active)
 
@@ -263,10 +264,10 @@ Production-extension validation:
   [whole installation](scene-runs/upgrade-validation/presentation-study/review_region-installation-core_cam-whole-installation.png).
   This is a backend comparison using an existing accepted layout, not a fresh
   autonomous world-generation success.
-- [ ] Finish independent model-planned presentation validation. The initial run
-  exposed an ambiguous arc example, then occluded cameras and overexposure.
-  Arc contract normalization and bounded presentation recovery are implemented;
-  latest run remains under review. All rejected attempts are retained.
+- [ ] Finish independent model-planned presentation validation. The exhibition
+  exhausted its 32-call budget without passing visual review; overexposure and
+  material presentation remain unresolved. Its rejected renders and reports are
+  retained, including `production-material-recovery.log`.
 
 ## Complexity and recovery follow-through (active)
 
@@ -297,3 +298,83 @@ Production-extension validation:
 All log paths above are relative to `scene-runs/upgrade-validation/`.
 The full-detail production profile and operational instructions are in
 `examples/adaptive/production-offline.json` and `examples/adaptive/PRODUCTION.md`.
+
+
+## Collection-60-1 recovery (active)
+
+- [x] Audit all six planned scenes and historical attempts: 0/6 accepted,
+  eight attempts per scene, 75 reported model attempts / 555,074 tokens at audit.
+  Main failures: malformed or noncoincident region connections, generic lighting
+  errors, missing sources, and repeated retries against unchanged checkpoints.
+  Original config omitted a catalogue and disabled image review (concept defaults).
+  Evidence: `scene-runs/collection-60-1/recovery/baseline-audit.json`.
+- [x] Preserve original batch config/progress and every historical run. Add
+  explicit `--recover-config` migration which creates a versioned batch config
+  and fresh attempts without rewriting immutable run inputs or resetting spending
+  history/lifetime attempts. Relative catalogue/backend paths remain valid.
+- [x] Report all invalid region connections with exact IDs, local bounds and
+  world coordinates. Support a single shared `world_at` point; reject conflicting
+  coordinate representations, missing targets, self-links and out-of-bounds points.
+- [x] Clarify authored architecture/terrain versus missing external source models
+  and materials. Fix the example's invalid literal `models or textures` value.
+- [x] Stop missing-source retries until explicitly requeued; recognize reservation
+  budget failures as spending limits instead of redesign candidates.
+- [x] Persist request-hashed paid raw responses before schema validation; recover
+  them after parser fixes without extra model calls. Unbound historical response
+  logs are not silently reused as trustworthy checkpoints.
+- [x] Compact visual-repair input to authoring objects; remove repeated runtime
+  provenance/cache paths. Support changed-object visual patches preserving omitted
+  objects, exact transforms, source IDs, materials and support references.
+- [x] Verify recovery code: 94 Rust scene tests and 78 Python tests passed; CLI built.
+  Production recovery preflight passed actual Blender native/GLB export/render and
+  the configured image-capable model checks.
+- [x] Prepare strict production recovery config with real-source catalogue,
+  full source detail, image review and warning-free acceptance. The explicitly
+  requested Minecraft/voxel task retains intentional voxel geometry through a
+  task override while keeping strict image review. Other tasks remain realistic.
+- [ ] Complete the new recovery attempts, inspect their outputs and classify any
+  remaining source gaps. Scheduler log: `scene-runs/collection-60-1/recovery/scheduler.log`.
+- [ ] Expand missing exact domain components as identified; do not substitute
+  generic models to make the batch show accepted.
+
+### Resume diagnostics and fixes, 2026-10-19
+
+- [x] Trace repeated dependency-review schema errors to recipe objects returned
+  where tool-name strings were required. Provide explicit examples and preserve
+  exact nested field paths through both normalized and ordinary JSON responses.
+- [x] Add bounded image-review schema correction retaining actual images;
+  checkpoint by images, requirements and model context, without defaulting missing
+  coverage to success or charging replay tokens again.
+- [x] Stop batch retries when the internal schema correction is exhausted;
+  explicit `--retry-schema-blocked` allows recovery after a concrete fix.
+- [x] Distinguish authored custom machinery from genuinely missing source models.
+  The sci-fi run passed dependency review and reached regional geometry design.
+- [x] Preserve spatial-program inventory context when a catalogue expands;
+  resolve newly available sources through exact-ID dependency binding, with
+  owner-region usage checks, rather than requiring a complete new design.
+- [x] Acquire 4K aggregate concrete and weathered timber from Poly Haven; inspect
+  both in Blender. Each has three packed 4096×4096 maps, no technical errors and
+  one inspection warning. Source inspection is not scene-quality acceptance.
+- [ ] Complete the pavilion recovery using the inspected timber source.
+- [ ] Complete sci-fi region geometry, assembly and actual-image validation.
+- [ ] Resolve remaining exact source gaps for the temple, fossil museum, voxel
+  materials and karst landscape; no proxy or unrelated substitution is accepted.
+- [ ] Deliver accepted previews and final manifests for all six batch tasks.
+
+Current evidence is in `scene-runs/collection-60-1/recovery/`: `schema-recovery.log`,
+`resume-rust-tests.log`, `resume-python-tests.log`, `aggregate-qa.json`, and
+`timber-qa.json`. At this checkpoint the batch still has **0/6 accepted**. Planning
+progress and passing software tests do not mean the six requested worlds are done.
+
+Landscape follow-through: the three-variant run produced 48 full-detail saplings,
+53 mesh objects sharing six mesh datablocks, 6,407,591 evaluated triangles and
+20,135,823 packed texture bytes in assembly attempt 5. Native/GLB validation passed.
+Image review correctly rejected floating corridor polygons, insufficient terrain
+context and an occluded detail view. It then hit token reservation capacity with
+an oversized repair prompt. The compact-patch recovery is now being exercised;
+these previews are not accepted production results.
+
+Shared distribution spacing now applies across different source prototypes,
+including identical seeds; each pair respects the larger requested spacing.
+Regression tests cover this along with schema normalization of exact recipe
+containers, conflict rejection, and source-preserving compact repair transforms.

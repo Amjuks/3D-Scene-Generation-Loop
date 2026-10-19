@@ -70,6 +70,163 @@ struct MissingAsset {
 fn missing_model_type() -> String {
     "models".into()
 }
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DependencyReview {
+    decisions: Vec<DependencyDecision>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DependencyDecision {
+    name: String,
+    disposition: String,
+    region_ids: Vec<String>,
+    recipes: Vec<String>,
+    construction_method: String,
+    #[serde(default)]
+    catalog_asset_id: Option<String>,
+}
+
+fn apply_dependency_review(
+    program: &SceneProgram,
+    review: &DependencyReview,
+    catalog: &Value,
+) -> Result<SceneProgram> {
+    let mut candidate = program.clone();
+    let mut seen = HashSet::new();
+    for decision in &review.decisions {
+        let source = program
+            .unresolved_assets
+            .iter()
+            .find(|a| a.name == decision.name)
+            .ok_or_else(|| {
+                err(format!(
+                    "dependency decision names unknown requirement {}",
+                    decision.name
+                ))
+            })?;
+        if !seen.insert(&decision.name) || decision.construction_method.trim().is_empty() {
+            return Err(err(
+                "dependency decisions must be unique and include a concrete rationale",
+            ));
+        }
+        match decision.disposition.as_str() {
+            "source_required" => (),
+            "catalog_source" => {
+                let id = decision.catalog_asset_id.as_deref().ok_or_else(|| err("catalog_source requires catalog_asset_id"))?;
+                let asset = catalog["assets"].as_array().and_then(|assets| assets.iter().find(|a| a["id"].as_str() == Some(id)))
+                    .ok_or_else(|| err(format!("catalog source {id} is not available under the current source policy")))?;
+                let kind = if source.asset_type == "textures" { "material" } else { "model" };
+                if asset["kind"].as_str() != Some(kind) || decision.region_ids.is_empty() {
+                    return Err(err("catalog source must match requirement type and name existing region owners"));
+                }
+                for owner in &decision.region_ids {
+                    let region = candidate.regions.iter_mut().find(|r| &r.id == owner)
+                        .ok_or_else(|| err(format!("dependency owner {owner} does not exist")))?;
+                    region.detail_policy.push_str(&format!("\nRequired source for {}: use exact catalogue ID {id} ({kind}). Suitability rationale: {}. Preserve identity and source detail; actual use and appearance will be checked.", decision.name, decision.construction_method));
+                }
+                candidate.unresolved_assets.retain(|a| a.name != decision.name);
+            }
+            "authored_geometry" => {
+                if source.asset_type != "models"
+                    || decision.region_ids.is_empty()
+                    || decision.recipes.is_empty()
+                    || decision.recipes.iter().any(|r| {
+                        ![
+                            "mesh",
+                            "extrusion",
+                            "lathe",
+                            "sweep",
+                            "heightfield",
+                            "wall",
+                            "slab",
+                            "stairs",
+                            "door",
+                            "window",
+                        ]
+                        .contains(&r.as_str())
+                            && !(program.visual_style == "voxel" && VOXEL.contains(&r.as_str()))
+                    })
+                {
+                    return Err(err("authored dependency requires a model, existing region owners and supported geometry recipes; missing source materials cannot be waived"));
+                }
+                for id in &decision.region_ids {
+                    let region = candidate
+                        .regions
+                        .iter_mut()
+                        .find(|r| &r.id == id)
+                        .ok_or_else(|| err(format!("dependency owner {id} does not exist")))?;
+                    region.detail_policy.push_str(&format!("\nAuthor {} using {:?}: {}. This is a construction plan, not a certificate of visual fidelity.",decision.name,decision.recipes,decision.construction_method));
+                }
+                candidate
+                    .unresolved_assets
+                    .retain(|a| a.name != decision.name);
+            }
+            _ => {
+                return Err(err(
+                    "dependency disposition must be source_required, catalog_source or authored_geometry",
+                ))
+            }
+        }
+    }
+    if seen.len() != program.unresolved_assets.len() {
+        return Err(err(
+            "dependency review must address every exact requirement name",
+        ));
+    }
+    Ok(candidate)
+}
+
+fn validate_source_bindings(
+    region: &Region,
+    plan: &RegionPlan,
+    bindings: &[DependencyDecision],
+) -> Result<()> {
+    for binding in bindings
+        .iter()
+        .filter(|b| b.disposition == "catalog_source" && b.region_ids.contains(&region.id))
+    {
+        let id = binding
+            .catalog_asset_id
+            .as_deref()
+            .ok_or_else(|| err("missing bound source ID"))?;
+        if !plan.objects.iter().any(|object| {
+            ["asset_id", "material_asset_id"]
+                .iter()
+                .any(|key| object.parameters.get(*key).and_then(Value::as_str) == Some(id))
+        }) {
+            return Err(err(format!("region {} must actually use bound source {id} for {}; declaring it in prose is insufficient", region.id, binding.name)));
+        }
+    }
+    Ok(())
+}
+
+// New sources should resolve dependencies, not redesign every existing region.
+// Freeze only the program's inventory context; all actual source validation and
+// regional work still use the live catalogue. Changed prompts/contracts reset it.
+fn planning_catalog(path: &Path, contract: &Value, live: &Value) -> Result<Value> {
+    let mut scope = contract.clone();
+    scope
+        .as_object_mut()
+        .ok_or_else(|| err("program contract must be an object"))?
+        .remove("asset_catalog");
+    let scope_hash = hash_bytes(&serde_json::to_vec(&scope).map_err(err)?);
+    if let Ok(bytes) = std::fs::read(path) {
+        if let Ok(saved) = serde_json::from_slice::<Value>(&bytes) {
+            if saved["scope_hash"].as_str() == Some(&scope_hash)
+                && saved["catalog"]["assets"].is_array()
+            {
+                return Ok(saved["catalog"].clone());
+            }
+        }
+    }
+    atomic_write(
+        path,
+        &serde_json::to_vec_pretty(&json!({"scope_hash":scope_hash,"catalog":live}))
+            .map_err(err)?,
+    )?;
+    Ok(live.clone())
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Region {
@@ -108,8 +265,12 @@ fn camera_lens() -> f64 {
 #[serde(deny_unknown_fields)]
 struct Connection {
     target: String,
-    at: [f64; 3],
-    target_at: [f64; 3],
+    #[serde(default)]
+    at: Option<[f64; 3]>,
+    #[serde(default)]
+    target_at: Option<[f64; 3]>,
+    #[serde(default)]
+    world_at: Option<[f64; 3]>,
     width_m: f64,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -159,11 +320,11 @@ impl<'de> Deserialize<'de> for RegionRevision {
     ) -> std::result::Result<Self, D::Error> {
         let value = Value::deserialize(deserializer)?;
         if value.get("changed_objects").is_some() {
-            serde_json::from_value(value)
+            serde_path_to_error::deserialize(value)
                 .map(Self::Patch)
                 .map_err(serde::de::Error::custom)
         } else {
-            serde_json::from_value(value)
+            serde_path_to_error::deserialize(value)
                 .map(Self::Complete)
                 .map_err(serde::de::Error::custom)
         }
@@ -372,7 +533,7 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for AdaptiveResponse<T> {
                 }
             }
         }
-        serde_json::from_value(value)
+        serde_path_to_error::deserialize(value)
             .map(Self)
             .map_err(serde::de::Error::custom)
     }
@@ -416,6 +577,13 @@ async fn cached_call<T: Serialize + DeserializeOwned>(
         }
     }
     let raw_path = path.with_extension("raw.json");
+    atomic_write(
+        &path.with_extension("request.json"),
+        &serde_json::to_vec_pretty(
+            &json!({"input_hash":input_hash,"role":role.key(),"payload":payload}),
+        )
+        .map_err(err)?,
+    )?;
     let response = tokio::select! {
         _ = cancel.cancelled() => return Err(SceneError::Cancelled),
         result = invoker.invoke_json_checkpointed::<AdaptiveResponse<T>>(role, payload, Some((&raw_path, &input_hash))) => result?,
@@ -447,8 +615,10 @@ pub(crate) async fn design_scene(
     cancel: &CancellationToken,
 ) -> Result<SceneSpec> {
     let catalog = crate::asset_catalog::catalog_context(config)?;
-    let contract = program_contract(task, config, &catalog);
+    let mut contract = program_contract(task, config, &catalog);
     let folder = root.join("designs/adaptive");
+    contract["asset_catalog"] =
+        planning_catalog(&folder.join("planning-catalog.json"), &contract, &catalog)?;
     let draft: Checkpoint<SceneProgram> = cached_call(
         &folder.join("program.json"),
         Role::SceneDirector,
@@ -486,7 +656,9 @@ pub(crate) async fn design_scene(
             }
         },
     };
+    let mut connection_repairs = Vec::new();
     for attempt in 0..2 {
+        connection_repairs.extend(reconcile_connections(&mut program));
         let Err(error) = validate_program(&program, config) else {
             break;
         };
@@ -504,7 +676,44 @@ pub(crate) async fn design_scene(
         .await?;
         program = repaired.output;
     }
+    connection_repairs.extend(reconcile_connections(&mut program));
+    atomic_write(
+        &folder.join("connection-reconciliation.json"),
+        &serde_json::to_vec_pretty(&connection_repairs).map_err(err)?,
+    )?;
     validate_program(&program, config)?;
+    let mut source_bindings = Vec::new();
+    if !program.unresolved_assets.is_empty() {
+        let mut payload = json!({"original_prompt":task.prompt,"program":program,"asset_catalog":catalog,
+            "required_output":{"decisions":[{"name":"EXACT unresolved model name","disposition":"authored_geometry","region_ids":["EXACT existing region id"],"recipes":["mesh","sweep"],"construction_method":"detailed implementable construction method","catalog_asset_id":null},{"name":"EXACT unresolved name with a suitable current source","disposition":"catalog_source","region_ids":["EXACT existing region id"],"recipes":[],"catalog_asset_id":"EXACT existing asset ID","construction_method":"specific identity, morphology, dimensions and finish evidence matching this requirement"},{"name":"EXACT other unresolved name","disposition":"source_required","region_ids":[],"recipes":[],"construction_method":"specific reason a source is needed"}]},
+            "instructions":"Review EVERY unresolved asset independently. recipes is an array of supported tool NAME STRINGS, for example [\"mesh\",\"extrusion\"], NEVER objects, recipe IDs, parameters or asset IDs. Put construction details in construction_method. The sample decisions illustrate formats; emit exactly one decision per actual unresolved name. Distinguish genuine external source dependencies from custom fabrication. Use authored_geometry only when the supported declarative mesh/extrusion/lathe/sweep/heightfield/structural tools can faithfully realize this component at the requested style and detail; list existing owner region_ids, exact recipes and a detailed construction_method. Custom architectural piers, galleries, stairs, fictional sci-fi rings/vessels/cables and intentionally voxel machinery need not exist in a catalogue when they can be authored from their actual construction. Complex real organisms, anatomical skeletons, named species, intricate historical artifacts and scans requiring factual morphology still need exact sources; do not waive them or propose primitive substitutes. Use catalog_source for an exact suitable model or material NOW present in asset_catalog: supply catalog_asset_id, existing region owners and concrete identity/finish evidence. Never bind merely similar names or unrelated surfaces. Textures/materials must remain source_required unless an actual suitable catalog_source exists; this review cannot manufacture missing finishes. Empty catalogue is not a reason to waive a source. Preserve scope, source identity, scale and realism. Provide one decision per exact requirement name, no new requirements. Every authored result still needs actual geometry and visual validation."});
+        for attempt in 0..2 {
+            let response: Checkpoint<DependencyReview> = cached_call(
+                &folder.join(format!("dependency-review-{attempt}.json")),
+                Role::StructureDesigner,
+                &payload,
+                config,
+                root,
+                invoker,
+                store,
+                cancel,
+            )
+            .await?;
+            match apply_dependency_review(&program, &response.output, &catalog) {
+                Ok(candidate) => {
+                    source_bindings = response.output.decisions;
+                    program = candidate;
+                    break;
+                }
+                Err(error) if attempt == 0 => {
+                    payload["rejected_review"] = json!(response.output);
+                    payload["validation_error"] = json!(error.to_string());
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        validate_program(&program, config)?;
+    }
     atomic_write(
         &folder.join("accepted-program.json"),
         &serde_json::to_vec_pretty(&program).map_err(err)?,
@@ -513,7 +722,7 @@ pub(crate) async fn design_scene(
     ensure_assets_available(&program.unresolved_assets)?;
 
     let jobs = program.regions.iter().enumerate().map(|(index, region)| {
-        let folder = &folder; let catalog = &catalog; let program = &program;
+        let folder = &folder; let catalog = &catalog; let program = &program; let source_bindings = &source_bindings;
         async move {
             let base = region_contract(task, config, program, region, catalog);
             let mut payload = base.clone();
@@ -523,7 +732,7 @@ pub(crate) async fn design_scene(
                 let plan=response.output.apply(previous.take())?;
                 record_asset_requirements(folder, &format!("region-{}",region.id), &plan.unresolved_assets)?;
                 ensure_assets_available(&plan.unresolved_assets)?;
-                match compile_region(region, &plan, program, config, task.seed.unwrap_or(0), &response.model, &response.prompt_version) {
+                match validate_source_bindings(region, &plan, source_bindings).and_then(|()| compile_region(region, &plan, program, config, task.seed.unwrap_or(0), &response.model, &response.prompt_version)) {
                     Ok(nodes) => return Ok((index, nodes)),
                     Err(error) if attempt < config.recovery.repair_attempts_per_strategy => {
                         payload = json!({"contract":base,"previous_plan":plan,"validation_error":error.to_string(),"required_output":{"changed_objects":["complete Object records ONLY for changed or added objects"],"removed_object_ids":[],"unresolved_assets":[]},"instructions":"Return a RegionPatch containing only changed objects, using the Object schema from the contract. Omitted objects are preserved exactly; do not reprint them. Correct every instance of the measured issue and all missing required feature references. Preserve required scene features and design. Do not add a shell, unrelated furniture or proxy shapes. A complete RegionPlan is also accepted if necessary."});
@@ -697,10 +906,12 @@ pub(crate) async fn repair_region(
                 .map(|id| (n.node_id.clone(), id.to_owned()))
         })
         .collect::<BTreeMap<_, _>>();
-    let mut payload = json!({"contract":contract,"previous_region":previous,"existing_object_ids":local_ids,"visual_findings":findings,
-        "instructions":"Return a complete corrected RegionPlan. Reproduce the existing intended scene and required features, correct the camera-visible failures and preserve all unaffected objects and IDs. Keep the accepted region bounds and transform. Use explicit support references for contact and verified material_asset_id for textured authored surfaces. Do not invent assets, downgrade realism or remove requested features to pass. If essential sources are absent, report unresolved_assets."});
+    let mut previous_plan = compact_region_plan(spec, region_id)?;
+    let mut payload = json!({"contract":contract,"previous_plan":previous_plan,"visual_findings":findings,
+        "required_output":{"changed_objects":["complete Object records for changed or added objects only"],"removed_object_ids":[],"unresolved_assets":[]},
+        "instructions":"Return a RegionPatch. Omitted objects are preserved exactly. Correct the camera-visible failures and preserve unaffected objects, IDs and required features. Keep accepted region bounds and transform. Required negative space (clear paths, courtyards, openings) is realized by object arrangement, exclusion polygons or actual openings; attach its feature reference to the geometry defining it, never add a floating marker plane merely to represent empty space. Use support references for contact and verified materials. A complete RegionPlan is accepted if necessary. Missing essential sources must be reported as unresolved_assets."});
     for attempt in 0..=config.recovery.repair_attempts_per_strategy {
-        let response: Checkpoint<RegionPlan> = cached_call(
+        let response: Checkpoint<RegionRevision> = cached_call(
             &folder.join(format!(
                 "visual-repair-{}-{revision}-{attempt}.json",
                 region.id
@@ -714,11 +925,22 @@ pub(crate) async fn repair_region(
             cancel,
         )
         .await?;
-        let mut plan = response.output;
+        let mut revision_output = response.output;
+        let changed = match &mut revision_output {
+            RegionRevision::Complete(plan) => &mut plan.objects,
+            RegionRevision::Patch(patch) => {
+                for id in &mut patch.removed_object_ids {
+                    if let Some(local) = local_ids.get(id) {
+                        *id = local.clone();
+                    }
+                }
+                &mut patch.changed_objects
+            }
+        };
         // Existing graph IDs are region-prefixed; Object IDs are region-local.
         // Normalize exact known references only, avoiding prefix growth across
         // repeated visual repairs while retaining genuinely new object IDs.
-        for object in &mut plan.objects {
+        for object in changed {
             if let Some(local) = local_ids.get(&object.id) {
                 object.id = local.clone();
             }
@@ -726,6 +948,7 @@ pub(crate) async fn repair_region(
                 object.support = Some(local.clone());
             }
         }
+        let plan = revision_output.apply(Some(previous_plan.clone()))?;
         record_asset_requirements(
             &folder,
             &format!("visual-{}-{revision}", region.id),
@@ -748,12 +971,87 @@ pub(crate) async fn repair_region(
                 return Ok(nodes);
             }
             Err(error) if attempt < config.recovery.repair_attempts_per_strategy => {
-                payload = json!({"contract":contract,"previous_plan":plan,"visual_findings":findings,"validation_error":error.to_string(),"instructions":"Return a complete corrected RegionPlan; preserve scene features and fix the measured constraint."});
+                payload = json!({"contract":contract,"previous_plan":plan,"visual_findings":findings,"validation_error":error.to_string(),"required_output":{"changed_objects":[],"removed_object_ids":[],"unresolved_assets":[]},"instructions":"Return only corrected Object records in a RegionPatch; omitted objects are preserved. Fix the measured constraints and visual findings, preserving required features."});
+                previous_plan = plan;
             }
             Err(error) => return Err(error),
         }
     }
     unreachable!()
+}
+// Send authoring data to the repair model, never the expanded runtime graph's
+// repeated provenance, cache paths, validation records or export metadata.
+fn compact_region_plan(spec: &SceneSpec, region_id: &str) -> Result<RegionPlan> {
+    let prefix = format!("{region_id}-");
+    let mut objects = Vec::new();
+    for node in spec
+        .nodes
+        .iter()
+        .filter(|n| n.parent_id.as_deref() == Some(region_id))
+    {
+        let mut parameters = node.generation.parameters.clone();
+        let support = parameters.remove("support_node_id").and_then(|v| {
+            v.as_str()
+                .map(|s| s.strip_prefix(&prefix).unwrap_or(s).to_owned())
+        });
+        for key in [
+            "component_glb_path",
+            "asset_path",
+            "asset_sha256",
+            "asset_license",
+            "asset_source_url",
+            "asset_quality",
+            "asset_object",
+            "material_asset_path",
+            "material_asset_sha256",
+            "material_asset_license",
+            "material_asset_source_url",
+            "material_asset_quality",
+            "material_asset_object",
+        ] {
+            parameters.remove(key);
+        }
+        let [x, y, z, w] = node.transform.rotation_xyzw;
+        let rotation = [
+            (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y)),
+            (2.0 * (w * y - z * x)).clamp(-1.0, 1.0).asin(),
+            (2.0 * (w * z + x * y)).atan2(1.0 - 2.0 * (y * y + z * z)),
+        ]
+        .map(f64::to_degrees);
+        let material = node.materials.first();
+        objects.push(Object {
+            id: node
+                .node_id
+                .strip_prefix(&prefix)
+                .ok_or_else(|| err("region child lacks owned ID prefix"))?
+                .into(),
+            name: node.purpose.clone(),
+            semantic_class: node.kind.clone(),
+            recipe: node.generation.recipe.clone(),
+            size: node.bounds_local.size(),
+            position: node.transform.translation,
+            rotation,
+            support,
+            distribution: None,
+            parameters,
+            color: material.map_or([0.5; 3], |m| {
+                [m.base_color[0], m.base_color[1], m.base_color[2]]
+            }),
+            roughness: material.map_or(0.6, |m| m.roughness),
+            metallic: material.map_or(0.0, |m| m.metallic),
+            required_features: node.required_features.clone(),
+        });
+    }
+    Ok(RegionPlan {
+        description: spec
+            .nodes
+            .iter()
+            .find(|n| n.node_id == region_id)
+            .map_or("", |n| n.design.as_str())
+            .into(),
+        objects,
+        unresolved_assets: vec![],
+    })
 }
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -948,6 +1246,106 @@ fn transform(position: [f64; 3], rotation: [f64; 3]) -> Transform {
         scale: [1.0; 3],
     }
 }
+fn inverse_point(frame: &Transform, point: [f64; 3]) -> [f64; 3] {
+    let [x, y, z, w] = frame.rotation_xyzw;
+    Transform {
+        translation: [0.0; 3],
+        rotation_xyzw: [-x, -y, -z, w],
+        scale: [1.0; 3],
+    }
+    .point(std::array::from_fn(|i| point[i] - frame.translation[i]))
+}
+// Project a proposed seam onto the exact intersection of two oriented region
+// boxes. Dykstra projection keeps region transforms/dimensions fixed. No join
+// is invented when volumes are disjoint or numerical convergence is uncertain.
+fn shared_connection_point(a: &Region, b: &Region, proposed: [f64; 3]) -> Option<[f64; 3]> {
+    let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| a[i] * b[i]).sum::<f64>();
+    if proposed.iter().any(|v| !v.is_finite()) {
+        return None;
+    }
+    let mut planes = Vec::new();
+    for region in [a, b] {
+        let frame = transform(region.position, region.rotation);
+        let bounds = bounds(region.size);
+        for axis in 0..3 {
+            let mut unit = [0.0; 3];
+            unit[axis] = 1.0;
+            let rotated = frame.point(unit);
+            let normal: [f64; 3] = std::array::from_fn(|i| rotated[i] - frame.translation[i]);
+            planes.push((normal, dot(normal, region.position) + bounds.max[axis]));
+            let normal = normal.map(|v| -v);
+            planes.push((normal, dot(normal, region.position) - bounds.min[axis]));
+        }
+    }
+    let mut point = proposed;
+    let mut corrections = vec![[0.0; 3]; planes.len()];
+    for _ in 0..512 {
+        let before = point;
+        for (index, (normal, limit)) in planes.iter().enumerate() {
+            let shifted = std::array::from_fn(|i| point[i] + corrections[index][i]);
+            let excess = (dot(*normal, shifted) - limit).max(0.0) / dot(*normal, *normal);
+            point = std::array::from_fn(|i| shifted[i] - excess * normal[i]);
+            corrections[index] = std::array::from_fn(|i| shifted[i] - point[i]);
+        }
+        if point.iter().any(|v| !v.is_finite()) {
+            return None;
+        }
+        if (0..3).all(|i| (point[i] - before[i]).abs() < 1e-8)
+            && planes
+                .iter()
+                .all(|(normal, limit)| dot(*normal, point) <= limit + 1e-7)
+        {
+            return Some(point);
+        }
+    }
+    None
+}
+fn reconcile_connections(program: &mut SceneProgram) -> Vec<Value> {
+    let regions = program.regions.clone();
+    let mut evidence = Vec::new();
+    for region in &mut program.regions {
+        let source = regions.iter().find(|r| r.id == region.id).unwrap();
+        for connection in &mut region.connections {
+            let Some(target) = regions
+                .iter()
+                .find(|r| r.id == connection.target && r.id != region.id)
+            else {
+                continue;
+            };
+            let proposed = match (connection.world_at, connection.at, connection.target_at) {
+                (Some(world), None, None) => world,
+                (None, Some(at), Some(target_at)) => {
+                    let a = transform(source.position, source.rotation).point(at);
+                    let b = transform(target.position, target.rotation).point(target_at);
+                    // Leave already valid local representations unchanged.
+                    if bounds(source.size).contains(at, 1e-7, 0.0)
+                        && bounds(target.size).contains(target_at, 1e-7, 0.0)
+                        && (0..3).all(|i| (a[i] - b[i]).abs() < 1e-7)
+                    {
+                        continue;
+                    }
+                    std::array::from_fn(|i| (a[i] + b[i]) * 0.5)
+                }
+                _ => continue,
+            };
+            let Some(shared) = shared_connection_point(source, target, proposed) else {
+                continue;
+            };
+            if connection.world_at.is_some()
+                && (0..3).all(|i| (shared[i] - proposed[i]).abs() < 1e-7)
+            {
+                continue;
+            }
+            evidence.push(json!({"source":source.id,"target":target.id,"original_connection":connection,"world_at":shared,
+                "distance_from_proposed_m":(0..3).map(|i|(shared[i]-proposed[i]).powi(2)).sum::<f64>().sqrt(),
+                "method":"nearest point in intersection of fixed oriented region bounds; does not establish built walkway/support geometry"}));
+            connection.world_at = Some(shared);
+            connection.at = None;
+            connection.target_at = None;
+        }
+    }
+    evidence
+}
 fn validate_program(program: &SceneProgram, config: &SceneConfig) -> Result<()> {
     if let Some(environment) = &program.environment {
         environment.validate(config.planning.max_extent_m)?;
@@ -992,13 +1390,15 @@ fn validate_program(program: &SceneProgram, config: &SceneConfig) -> Result<()> 
         {
             return Err(err(format!("invalid region dimensions: {}", region.id)));
         }
-        if region.required_features.is_empty()
-            || region.object_budget == 0
+        if region.required_features.is_empty() {
+            return Err(err(format!("region {} has EMPTY required_features. Add at least one concrete scene-specific feature describing what its geometry must realize (including surroundings/terrain); copy any owned global feature strings exactly. Keep its allocation and design, do not drop the region",region.id)));
+        }
+        if region.object_budget == 0
             || region.object_budget > config.planning.max_objects_per_region
         {
             return Err(err(format!(
-                "invalid region feature/detail allocation: {}",
-                region.id
+                "region {} object_budget={} must be 1..={}; account for root and region nodes in the global budget",
+                region.id, region.object_budget, config.planning.max_objects_per_region
             )));
         }
         allocated = allocated
@@ -1063,34 +1463,59 @@ fn validate_program(program: &SceneProgram, config: &SceneConfig) -> Result<()> 
     {
         return Err(err("scene world extent exceeds planning.max_extent_m"));
     }
+    let mut connection_errors = Vec::new();
     for region in &program.regions {
         for connection in &region.connections {
-            let target = program
-                .regions
-                .iter()
-                .find(|r| r.id == connection.target)
-                .ok_or_else(|| err("connection references missing region"))?;
-            if target.id == region.id
-                || !connection.width_m.is_finite()
-                || connection.width_m <= 0.0
-                || !bounds(region.size).contains(connection.at, 0.001, 0.0)
-                || !bounds(target.size).contains(connection.target_at, 0.001, 0.0)
-            {
-                return Err(err("invalid region connection"));
+            let label = format!("{} -> {}", region.id, connection.target);
+            let Some(target) = program.regions.iter().find(|r| r.id == connection.target) else {
+                connection_errors.push(format!("{label}: missing target; valid IDs are {:?}", ids));
+                continue;
+            };
+            if target.id == region.id {
+                connection_errors.push(format!(
+                    "{label}: self-connection; target must be another region"
+                ));
+                continue;
             }
-            let a = transform(region.position, region.rotation).point(connection.at);
-            let b = transform(target.position, target.rotation).point(connection.target_at);
+            if !connection.width_m.is_finite() || connection.width_m <= 0.0 {
+                connection_errors.push(format!("{label}: width_m must be finite and positive"));
+            }
+            let source_frame = transform(region.position, region.rotation);
+            let target_frame = transform(target.position, target.rotation);
+            let (at, target_at) = match (connection.world_at, connection.at, connection.target_at) {
+                (Some(world), None, None) => (
+                    inverse_point(&source_frame, world),
+                    inverse_point(&target_frame, world),
+                ),
+                (None, Some(at), Some(target_at)) => (at, target_at),
+                _ => {
+                    connection_errors.push(format!("{label}: supply one world_at shared point OR both local at and target_at, never both representations"));
+                    continue;
+                }
+            };
+            for (owner, point) in [(region, at), (target, target_at)] {
+                if point.iter().any(|v| !v.is_finite())
+                    || !bounds(owner.size).contains(point, 0.001, 0.0)
+                {
+                    connection_errors.push(format!("{label}: endpoint {point:?} is outside {} local bounds {:?}; XY are centered, Z starts at zero. Region world origin {:?}, Euler rotation {:?}", owner.id, bounds(owner.size), owner.position, owner.rotation));
+                }
+            }
+            let a = source_frame.point(at);
+            let b = target_frame.point(target_at);
             if (0..3).any(|i| {
                 !a[i].is_finite()
                     || !b[i].is_finite()
                     || (a[i] - b[i]).abs() > config.quality.containment_tolerance_m.max(0.01)
             }) {
-                return Err(err(format!(
-                    "{} and {} connection points do not meet in world space",
-                    region.id, target.id
-                )));
+                connection_errors.push(format!("{label}: endpoints do not meet: source world {a:?}, target world {b:?}. Keeping source endpoint requires target_at={:?}, which must also fit the target bounds. For separated regions author an actual connecting region; do not fake coincident coordinates", inverse_point(&target_frame, a)));
             }
         }
+    }
+    if !connection_errors.is_empty() {
+        return Err(err(format!(
+            "invalid region connections:\n{}",
+            connection_errors.join("\n")
+        )));
     }
     Ok(())
 }
@@ -1168,6 +1593,7 @@ fn compile_region(
             parameters: BTreeMap::from([
                 ("at".into(), json!(c.at)),
                 ("target_at".into(), json!(c.target_at)),
+                ("world_at".into(), json!(c.world_at)),
                 ("width_m".into(), json!(c.width_m)),
             ]),
         })
@@ -1929,9 +2355,9 @@ fn validate_authored_geometry(object: &Object) -> Result<()> {
 
 fn program_contract(task: &SceneTask, config: &SceneConfig, catalog: &Value) -> Value {
     json!({"original_prompt":task.prompt,"seed":task.seed.unwrap_or(0),"fidelity":config.quality.fidelity,"asset_catalog":catalog,
-        "required_output":{"description":"specific interpretation of the requested scene","scene_kind":"prompt-derived domain, never a universal building label","visual_style":"realistic | stylized | voxel | concept","topology":"actual spatial organization and construction logic","environment":{"purpose":"prompt-specific location, time of day and lighting intent","sky":"physical_sky","background_color":[0.1,0.1,0.1],"strength":0.3,"exposure":0,"sun":{"elevation_degrees":35,"azimuth_degrees":120,"energy":2,"color":[1,0.95,0.88],"angular_size_degrees":0.53},"lights":[]},"required_features":["concrete prompt-critical feature"],"unresolved_assets":[{"name":"required model absent from catalog","category":"semantic category","asset_type":"models or textures","reason":"why authored surfaces or available models cannot faithfully replace it"}],"regions":[{"id":"safe-unique-id","name":"specific functional or landscape region","purpose":"what belongs here and why","position":[0,0,0],"size":[10,10,5],"rotation":[0,0,0],"required_features":["copy exact concrete feature strings to owned objects later"],"detail_policy":"allocate detail by visible scale, hero objects, foreground/midground/background","object_budget":12,"review_cameras":[{"id":"local-hero","position":[0,-3,1.7],"target":[0,0,1.2],"lens_mm":35,"coverage":"required interior or object feature"}],"connections":[{"target":"other-region-id","at":[0,0,0],"target_at":[0,0,0],"width_m":1.5}]}]},
+        "required_output":{"description":"specific interpretation of the requested scene","scene_kind":"prompt-derived domain, never a universal building label","visual_style":"realistic | stylized | voxel | concept","topology":"actual spatial organization and construction logic","environment":{"purpose":"prompt-specific location, time of day and lighting intent","sky":"physical_sky","background_color":[0.1,0.1,0.1],"strength":0.3,"exposure":0,"sun":{"elevation_degrees":35,"azimuth_degrees":120,"energy":2,"color":[1,0.95,0.88],"angular_size_degrees":0.53},"lights":[]},"required_features":["concrete prompt-critical feature"],"unresolved_assets":[{"name":"required model absent from catalog","category":"semantic category","asset_type":"models","reason":"why authored surfaces or available models cannot faithfully replace it"}],"regions":[{"id":"safe-unique-id","name":"specific functional or landscape region","purpose":"what belongs here and why","position":[0,0,0],"size":[10,10,5],"rotation":[0,0,0],"required_features":["copy exact concrete feature strings to owned objects later"],"detail_policy":"allocate detail by visible scale, hero objects, foreground/midground/background","object_budget":12,"review_cameras":[{"id":"local-hero","position":[0,-3,1.7],"target":[0,0,1.2],"lens_mm":35,"coverage":"required interior or object feature"}],"connections":[{"target":"other-region-id","world_at":[0,0,0],"width_m":1.5}]}]},
         "limits":{"max_regions":config.planning.max_regions,"max_objects_per_region":config.planning.max_objects_per_region,"total_nodes_including_root_regions_and_objects":config.budgets.max_nodes,"max_world_extent_m":config.planning.max_extent_m},
-        "instructions":"Create a scene-specific spatial program before geometry. Author an environment appropriate to the actual location, time, mood and visibility, never copy a universal sun/fill rig. environment.sky is physical_sky (requires sun) or constant; constant can omit sun for interiors, night and controlled lighting. Colors are linear RGB 0..1, strength 0..10, exposure -16..16 stops. Start physical-sky daylight near strength 0.2 and exposure 0, adjusting for the actual scene. Positive exposure brightens all surfaces exponentially and can wash out material detail; do not assume golden hour requires positive exposure. Sun elevation 0..90 and azimuth -360..360 degrees from +X toward +Y, energy 0..100, angular_size_degrees .01..45. Up to64 lights use {id,purpose,kind:area|spot|point,position:[x,y,z],target:[x,y,z],color:[r,g,b],power_w,size_m,spot_angle_degrees:45}; all positions/targets are WORLD metres. Place plausible sources deliberately; do not add generic fill when incompatible with the scene. World shaders and area lights are native Blender features; the native file is authoritative for offline delivery. Full original source detail is the default; high render cost is acceptable. Allocate actual surroundings and detail, not just isolated hero props. Any scale or domain is valid: object study, sacred site, museum, wild landscape, streets, industrial plant, fictional world, interior, exterior or mixed. Regions are semantic work allocations and bounding envelopes, NOT rooms and NOT geometry. Never impose walls, roofs, room interiors, terrain platforms, bridges, furniture counts, symmetry or a fixed family of layouts. A real meadow stays outdoors; a prayer hall follows its ritual and architectural context; a museum contains its specific collection and circulation. Use only as many regions as needed. Prefer ONE region for a small coherent object study, installation or garden; splitting it into arbitrary rectangular bands creates needless seams. Decompose larger scenes by genuinely independent spatial work, not one region per feature. Allocate bounded object budgets by scene complexity, salient detail and size; root+regions+SUM(object_budget) must fit total_nodes. Bounds are meters, X/Y centred, bottom Z; region positions are world coordinates, rotations XYZ Euler degrees. A connection names two coincident local boundary points in adjacent regions and their traversable width; omit connections if unrelated. Preserve spatial negative space, true proportions, access, engineering support, and domain-specific features. Every global required feature must appear VERBATIM in at least one region.required_features list; these strings are exact references, not paraphrased descriptions. Region-local additional features may also be listed. Catalogue assets are actual available models; never invent IDs. For realistic scenes use production assets for complex organic/hero objects (trees, people, sculptures, vehicles, intricate furniture) unless explicit authored geometry can faithfully describe the object. Do not substitute a primitive assembly, a generic room, or a recolored prop. List missing essential assets in unresolved_assets rather than pretending to produce realism. Geometry specialists can author arbitrary mesh, profile extrusion, lathe, sweep and heightfield surfaces; nothing requires rectangular occupied volumes. Choose region-local review_cameras that expose required occupied interiors, hero morphology and remote scene zones; at most three per region and twelve overall. Do not rely on exterior overview cameras to reveal hidden interiors. Review cameras are lifted above actual heightfield terrain if accidentally below ground; set allow_subsurface=true only for intentional underground views. Regional specialists execute independently, so ownership, shared seams, supports and cross-region dependencies must be resolved now. Return JSON only."})
+        "instructions":"Create a scene-specific spatial program before geometry. Author an environment appropriate to the actual location, time, mood and visibility, never copy a universal sun/fill rig. environment.sky is physical_sky (requires sun) or constant; constant can omit sun for interiors, night and controlled lighting. Colors are linear RGB 0..1, strength 0..10, exposure -16..16 stops. Start physical-sky daylight near strength 0.2 and exposure 0, adjusting for the actual scene. Positive exposure brightens all surfaces exponentially and can wash out material detail; do not assume golden hour requires positive exposure. Sun elevation 0..90 and azimuth -360..360 degrees from +X toward +Y, energy 0..100, angular_size_degrees .01..45. Up to64 lights use {id,purpose,kind:area|spot|point,position:[x,y,z],target:[x,y,z],color:[r,g,b],power_w,size_m,spot_angle_degrees:45}; all positions/targets are WORLD metres. Place plausible sources deliberately; do not add generic fill when incompatible with the scene. World shaders and area lights are native Blender features; the native file is authoritative for offline delivery. Full original source detail is the default; high render cost is acceptable. Allocate actual surroundings and detail, not just isolated hero props. Any scale or domain is valid: object study, sacred site, museum, wild landscape, streets, industrial plant, fictional world, interior, exterior or mixed. Regions are semantic work allocations and bounding envelopes, NOT rooms and NOT geometry. Never impose walls, roofs, room interiors, terrain platforms, bridges, furniture counts, symmetry or a fixed family of layouts. A real meadow stays outdoors; a prayer hall follows its ritual and architectural context; a museum contains its specific collection and circulation. Use only as many regions as needed. Prefer ONE region for a small coherent object study, installation or garden; splitting it into arbitrary rectangular bands creates needless seams. Decompose larger scenes by genuinely independent spatial work, not one region per feature. Allocate bounded object budgets by scene complexity, salient detail and size; root+regions+SUM(object_budget) must fit total_nodes. Bounds are meters, X/Y centred, bottom Z; region positions are world coordinates, rotations XYZ Euler degrees. A connection uses target (another exact region ID), world_at (ONE shared WORLD point inside both region envelopes), and width_m. Do not connect a region to itself. Adjacent region bounds must actually meet at world_at; separated regions need a physically authored connecting region. Legacy at/target_at can instead specify coincident LOCAL points in each respective region, but never combine those with world_at. Omit connections for unrelated allocations; connected terrain or architecture must still be continuous. Preserve spatial negative space, true proportions, access, engineering support, and domain-specific features. Every global required feature must appear VERBATIM in at least one region.required_features list; these strings are exact references, not paraphrased descriptions. Region-local additional features may also be listed. Catalogue assets are actual available models; never invent IDs. For realistic scenes use production assets for complex organic/hero objects (trees, people, sculptures, vehicles, intricate furniture) unless explicit authored geometry can faithfully describe the object. Do not substitute a primitive assembly, a generic room, or a recolored prop. List missing essential SOURCE MODELS or SOURCE MATERIALS in unresolved_assets rather than pretending to produce realism. Do not classify custom-buildable architecture (piers, galleries, stairs, rails, roofs) or authored terrain shapes as missing external models merely because no prebuilt scene exists. Author these with the supported geometry recipes; report their genuinely missing surface materials separately as asset_type textures. Skeletons, exact species and intricate hero objects still require suitable real sources. asset_type must be exactly models or textures, never a descriptive phrase. Geometry specialists can author arbitrary mesh, profile extrusion, lathe, sweep and heightfield surfaces; nothing requires rectangular occupied volumes. Choose region-local review_cameras that expose required occupied interiors, hero morphology and remote scene zones; at most three per region and twelve overall. Do not rely on exterior overview cameras to reveal hidden interiors. Review cameras are lifted above actual heightfield terrain if accidentally below ground; set allow_subsurface=true only for intentional underground views. Regional specialists execute independently, so ownership, shared seams, supports and cross-region dependencies must be resolved now. Return JSON only."})
 }
 fn region_contract(
     task: &SceneTask,
@@ -2275,6 +2701,33 @@ mod tests {
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[1].generation.recipe, "heightfield");
         assert!(!nodes.iter().any(|n| n.kind == "furnished_room"));
+        let mut spec = SceneSpec {
+            schema_version: 1,
+            root_id: "scene".into(),
+            prompt_summary: "ridge".into(),
+            coordinate_system: "RH_M_ZUP_XEAST_YNORTH".into(),
+            nodes,
+        };
+        spec.nodes[1].transform = transform([1.0, 2.0, 3.0], [12.0, 25.0, 37.0]);
+        spec.nodes[1]
+            .generation
+            .parameters
+            .insert("component_glb_path".into(), json!("internal/cache.glb"));
+        let compact = compact_region_plan(&spec, &spec.nodes[0].node_id).unwrap();
+        assert_eq!(compact.objects.len(), 1);
+        assert_eq!(
+            compact.objects[0].parameters["heights"],
+            json!([[0.0, 8.0], [20.0, 4.0]])
+        );
+        assert!(!compact.objects[0]
+            .parameters
+            .contains_key("component_glb_path"));
+        let before = spec.nodes[1].transform.point([4.0, 5.0, 6.0]);
+        let after = transform(compact.objects[0].position, compact.objects[0].rotation)
+            .point([4.0, 5.0, 6.0]);
+        assert!((0..3).all(|i| (before[i] - after[i]).abs() < 1e-9));
+        let compact_bytes = serde_json::to_vec(&compact).unwrap().len();
+        assert!(compact_bytes * 2 < serde_json::to_vec(&spec.nodes).unwrap().len());
     }
     #[test]
     fn source_distributions_expand_into_real_owned_nodes_with_budgeted_support() {
@@ -2311,6 +2764,78 @@ mod tests {
         assert!(expand_distributions(&[tree], 20, 3).is_err());
     }
     #[test]
+    fn shared_world_connection_handles_rotation_and_reports_all_bad_endpoints() {
+        let config = SceneConfig::default();
+        let mut p = program();
+        p.regions[0].size = [10.0, 10.0, 5.0];
+        p.regions[0].position = [0.0; 3];
+        p.regions[0].rotation = [0.0, 0.0, 90.0];
+        let mut target = p.regions[0].clone();
+        target.id = "adjacent".into();
+        target.position = [10.0, 0.0, 0.0];
+        target.rotation = [0.0; 3];
+        p.regions.push(target);
+        p.regions[0].connections.push(Connection {
+            target: "adjacent".into(),
+            world_at: Some([5.0, 0.0, 1.0]),
+            at: None,
+            target_at: None,
+            width_m: 2.0,
+        });
+        validate_program(&p, &config).unwrap();
+        p.regions[0].connections[0].world_at = Some([50.0, 0.0, 1.0]);
+        let error = validate_program(&p, &config).unwrap_err().to_string();
+        assert!(error.contains("outside adjacent local bounds"));
+        assert_eq!(error.matches("is outside").count(), 2);
+        p.regions[0].connections[0].target = p.regions[0].id.clone();
+        assert!(validate_program(&p, &config)
+            .unwrap_err()
+            .to_string()
+            .contains("self-connection"));
+    }
+    #[test]
+    fn connection_projection_repairs_terrace_seams_but_never_spans_empty_space() {
+        let mut p = program();
+        p.regions[0].size = [15.0, 15.0, 6.0];
+        p.regions[0].position = [0.0, 0.0, 12.0];
+        let mut lower = p.regions[0].clone();
+        lower.id = "lower".into();
+        lower.position = [0.0, 6.0, 6.0];
+        p.regions.push(lower);
+        p.regions[0].connections.push(Connection {
+            target: "lower".into(),
+            world_at: Some([0.0, 6.0, 7.0]),
+            at: None,
+            target_at: None,
+            width_m: 2.0,
+        });
+        let original_sizes = p.regions.iter().map(|r| r.size).collect::<Vec<_>>();
+        let repairs = reconcile_connections(&mut p);
+        assert_eq!(repairs.len(), 1);
+        assert_eq!(p.regions[0].connections[0].world_at, Some([0.0, 6.0, 12.0]));
+        assert_eq!(
+            original_sizes,
+            p.regions.iter().map(|r| r.size).collect::<Vec<_>>()
+        );
+        validate_program(&p, &SceneConfig::default()).unwrap();
+        assert!(reconcile_connections(&mut p).is_empty());
+        p.regions[1].position[0] = 100.0;
+        assert!(shared_connection_point(&p.regions[0], &p.regions[1], [0.0, 6.0, 7.0]).is_none());
+        assert!(reconcile_connections(&mut p).is_empty());
+        assert!(validate_program(&p, &SceneConfig::default()).is_err());
+        p.regions[1].position = [0.0, 0.0, 6.0];
+        p.regions[1].rotation = [0.0, 0.0, 45.0];
+        let point =
+            shared_connection_point(&p.regions[0], &p.regions[1], [20.0, 20.0, 0.0]).unwrap();
+        for region in &p.regions {
+            assert!(bounds(region.size).contains(
+                inverse_point(&transform(region.position, region.rotation), point),
+                1e-6,
+                0.0
+            ));
+        }
+    }
+    #[test]
     fn region_budgets_identifiers_and_seams_are_enforced() {
         let config = SceneConfig::default();
         let mut p = program();
@@ -2326,11 +2851,121 @@ mod tests {
         p.regions.push(second);
         p.regions[0].connections.push(Connection {
             target: "other".into(),
-            at: [0.0; 3],
-            target_at: [0.0; 3],
+            at: Some([0.0; 3]),
+            target_at: Some([0.0; 3]),
+            world_at: None,
             width_m: 1.0,
         });
         assert!(validate_program(&p, &config).is_err());
+    }
+    #[test]
+    fn added_catalog_sources_preserve_program_context_but_changed_briefs_reset_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("catalog.json");
+        let old = json!({"assets":[{"id":"first"}]});
+        let new = json!({"assets":[{"id":"first"},{"id":"new"}]});
+        let contract = json!({"original_prompt":"museum", "asset_catalog":old});
+        assert_eq!(planning_catalog(&path, &contract, &old).unwrap(), old);
+        let changed_inventory = json!({"original_prompt":"museum", "asset_catalog":new});
+        assert_eq!(
+            planning_catalog(&path, &changed_inventory, &new).unwrap(),
+            old
+        );
+        let changed_brief = json!({"original_prompt":"forest", "asset_catalog":new});
+        assert_eq!(planning_catalog(&path, &changed_brief, &new).unwrap(), new);
+    }
+
+    #[test]
+    fn source_resolution_requires_existing_correct_kind_and_actual_use() {
+        let mut p = program();
+        p.unresolved_assets = vec![MissingAsset {
+            name: "weathered timber".into(),
+            category: "wood".into(),
+            reason: "missing".into(),
+            asset_type: "textures".into(),
+        }];
+        let catalog =
+            json!({"assets":[{"id":"timber","kind":"material"},{"id":"tree","kind":"model"}]});
+        let mut review = DependencyReview {
+            decisions: vec![DependencyDecision {
+                name: "weathered timber".into(),
+                disposition: "catalog_source".into(),
+                region_ids: vec![p.regions[0].id.clone()],
+                recipes: vec![],
+                construction_method: "weathered timber grain with suitable deck surface use".into(),
+                catalog_asset_id: Some("timber".into()),
+            }],
+        };
+        let revised = apply_dependency_review(&p, &review, &catalog).unwrap();
+        assert!(revised.unresolved_assets.is_empty());
+        assert_eq!(revised.required_features, p.required_features);
+        let mut plan: RegionPlan = serde_json::from_value(json!({"description":"deck","objects":[{"id":"deck","name":"deck","semantic_class":"deck","recipe":"slab","size":[2,2,0.2],"position":[0,0,0],"parameters":{},"required_features":[]}]})).unwrap();
+        assert!(validate_source_bindings(&p.regions[0], &plan, &review.decisions).is_err());
+        plan.objects[0]
+            .parameters
+            .insert("material_asset_id".into(), json!("timber"));
+        validate_source_bindings(&p.regions[0], &plan, &review.decisions).unwrap();
+        review.decisions[0].catalog_asset_id = Some("tree".into());
+        assert!(apply_dependency_review(&p, &review, &catalog).is_err());
+        review.decisions[0].catalog_asset_id = Some("invented".into());
+        assert!(apply_dependency_review(&p, &review, &catalog).is_err());
+    }
+
+    #[test]
+    fn normalized_responses_keep_nested_schema_error_paths() {
+        let error = serde_json::from_value::<AdaptiveResponse<DependencyReview>>(json!({
+            "decisions":[{"name":"ring", "disposition":"authored_geometry", "region_ids":["core"],
+            "recipes":[{"tool":"mesh"}], "construction_method":"mesh"}]
+        }))
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(error.contains("decisions[0].recipes[0]"), "{error}");
+    }
+
+    #[test]
+    fn dependency_review_records_fabrication_without_waiving_source_finishes() {
+        let mut p = program();
+        p.unresolved_assets = vec![
+            MissingAsset {
+                name: "custom ring".into(),
+                category: "fictional architecture".into(),
+                reason: "not premade".into(),
+                asset_type: "models".into(),
+            },
+            MissingAsset {
+                name: "whale skeleton".into(),
+                category: "anatomy".into(),
+                reason: "exact bones".into(),
+                asset_type: "models".into(),
+            },
+            MissingAsset {
+                name: "basalt finish".into(),
+                category: "stone".into(),
+                reason: "surface scan".into(),
+                asset_type: "textures".into(),
+            },
+        ];
+        let review=DependencyReview{decisions:vec![
+            DependencyDecision{catalog_asset_id:None,name:"custom ring".into(),disposition:"authored_geometry".into(),region_ids:vec![p.regions[0].id.clone()],recipes:vec!["lathe".into(),"sweep".into()],construction_method:"Revolve annular section, sweep stiffeners and add fastener recesses at the specified dimensions".into()},
+            DependencyDecision{catalog_asset_id:None,name:"whale skeleton".into(),disposition:"source_required".into(),region_ids:vec![],recipes:vec![],construction_method:"Verified fossil anatomy is required".into()},
+            DependencyDecision{catalog_asset_id:None,name:"basalt finish".into(),disposition:"source_required".into(),region_ids:vec![],recipes:vec![],construction_method:"Need actual source surface".into()},
+        ]};
+        let revised = apply_dependency_review(&p, &review, &json!({"assets":[]})).unwrap();
+        assert_eq!(revised.unresolved_assets.len(), 2);
+        assert_eq!(revised.required_features, p.required_features);
+        assert_eq!(revised.regions[0].position, p.regions[0].position);
+        assert!(revised.regions[0]
+            .detail_policy
+            .contains("fastener recesses"));
+        let mut invalid = review.clone();
+        invalid.decisions[2].disposition = "authored_geometry".into();
+        invalid.decisions[2].region_ids = vec![p.regions[0].id.clone()];
+        invalid.decisions[2].recipes = vec!["mesh".into()];
+        assert!(apply_dependency_review(&p, &invalid, &json!({"assets":[]})).is_err());
+        invalid = review.clone();
+        invalid.decisions.pop();
+        assert!(apply_dependency_review(&p, &invalid, &json!({"assets":[]})).is_err());
     }
     #[test]
     fn missing_assets_are_actionable_and_never_replaced() {

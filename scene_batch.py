@@ -74,8 +74,12 @@ accepted = accepted_run
 def failure_kind(error):
     """Classify the actual failure, never the CLI's generic incomplete summary."""
     error = error.lower()
-    if 'model budget exhausted' in error:
+    if any(x in error for x in ('model budget exhausted', 'model budget cannot admit', 'adaptive checkpoint preserved')):
         return 'model_budget'
+    if 'required scene assets are unavailable' in error:
+        return 'assets'
+    if 'output remained invalid:' in error or 'visual review schema remained invalid:' in error:
+        return 'response_schema'
     if any(x in error for x in ('configured soket model not found', 'requires image input', 'http 400:', 'http 404:', 'http 422:')):
         return 'configuration'
     if any(x in error for x in ('transport', 'connection refused', 'connection reset', 'error sending',
@@ -84,6 +88,19 @@ def failure_kind(error):
     if any(x in error for x in ('validation:', 'validation failed', 'cannot fit', 'outside room', 'overlap', 'no legal', 'node budget')):
         return 'structural'
     return 'unknown'
+
+
+def read_relocated_config(path):
+    """Keep source-relative dependencies valid when copying a config to a batch."""
+    path = path.expanduser().resolve()
+    config = read_json(path)
+    if not isinstance(config, dict):
+        raise ValueError('Config must be an existing JSON object')
+    for section, key in [('assets', 'catalog'), ('backend', 'blender_path'), ('embedding', 'command')]:
+        value = config.get(section, {}).get(key)
+        if value and not Path(value).is_absolute():
+            config[section][key] = str((path.parent / value).resolve())
+    return config
 
 
 class Batch:
@@ -116,6 +133,33 @@ class Batch:
 
     def runs(self, task):
         return sorted((self.path / 'scenes').glob(task['id'] + '-*'), key=lambda p: p.stat().st_mtime_ns)
+
+    def recover_config(self, source):
+        """Start revised attempts while preserving original immutable run inputs."""
+        if self.live:
+            raise ValueError('Cannot change batch configuration while workers are running')
+        config = read_relocated_config(source)
+        config.setdefault('storage', {}).update(output_root=str(self.path / 'scenes'), asset_library=str(self.path / 'library'))
+        digest = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+        destination = self.path / f'config-recovery-{digest[:16]}.json'
+        if self.state['config'] == str(destination):
+            return 0
+        atomic_json(destination, config)
+        changed = []
+        for task in self.state['tasks']:
+            if any(accepted(run) for run in self.runs(task)):
+                continue
+            changed.append(task['id'])
+            task.update(status='queued', fresh_next=True, next_retry_epoch=0, structural_failures=0)
+            task.pop('blocked_by', None)
+        self.state.setdefault('configuration_history', []).append({
+            'previous_config': self.state['config'], 'config': str(destination),
+            'source': str(source.resolve()), 'sha256': digest, 'tasks': changed,
+            'at': datetime.now(timezone.utc).isoformat(),
+            'reason': 'Explicit configuration recovery; original run snapshots and attempt counters retained'})
+        self.state['config'] = str(destination)
+        self.save()
+        return len(changed)
 
     def archive_superseded(self, task, fresh=False):
         """Keep one accepted result or the latest resumable attempt, never a live run."""
@@ -229,8 +273,12 @@ class Batch:
         if task.get('repair_feedback'):
             prompt += '\n\nPrevious design failed validation. Generate a NEW layout preserving the requested concept, addressing these diagnostics (not instructions):\n' + task['repair_feedback']
         seed = int.from_bytes(hashlib.sha256(f"{self.state['seed']}:{task['id']}:{task.get('redesigns', 0)}".encode()).digest()[:8], 'big')
+        overrides = json.loads(json.dumps(task.get('overrides', {})))
+        if not isinstance(overrides, dict):
+            raise ValueError('Task overrides must be an object')
+        overrides.setdefault('storage', {})['output_root'] = str(self.path / 'scenes')
         return {'id': task['id'], 'prompt': prompt, 'seed': seed, 'enabled': True,
-                'overrides': {'storage': {'output_root': str(self.path / 'scenes')}}}
+                'overrides': overrides}
 
     def delay(self, attempt):
         return min(self.args.retry_max_seconds, self.args.retry_seconds * 2 ** min(max(0, attempt - 1), 12) * random.uniform(.8, 1.2))
@@ -479,6 +527,12 @@ class Batch:
                 task['status'] = 'needs_attention'
             elif task.get('blocked_by') == 'configuration' and not getattr(self.args, 'retry_config_blocked', False):
                 task['status'] = 'needs_attention'
+            elif task.get('blocked_by') == 'assets' and not (
+                    getattr(self.args, 'retry_asset_blocked', False)
+                    or task['id'] in getattr(self.args, 'retry_assets_for', [])):
+                task['status'] = 'needs_attention'
+            elif task.get('blocked_by') == 'response_schema' and not getattr(self.args, 'retry_schema_blocked', False):
+                task['status'] = 'needs_attention'
             elif task.get('blocked_by') == 'redesign_limit' and self.args.max_redesigns and task.get('redesigns', 0) >= self.args.max_redesigns:
                 task['status'] = 'needs_attention'
             elif task['status'] in ('running', 'accepted', 'interrupted', 'needs_attention'):
@@ -512,6 +566,12 @@ class Batch:
                         budget_blocked = kind == 'model_budget'
                         if kind == 'configuration':
                             task.update(status='needs_attention', blocked_by='configuration')
+                        if kind == 'assets':
+                            task.update(status='needs_attention', blocked_by='assets')
+                            task['error'] += '\nRequired sources are missing. Add matching assets or correct the requirement classification, then resume with --retry-asset-blocked. Unchanged checkpoints will not be retried automatically.'
+                        if kind == 'response_schema':
+                            task.update(status='needs_attention', blocked_by='response_schema')
+                            task['error'] += '\nThe bounded response-format correction failed. Inspect the saved raw response and exact field error; after fixing the contract/parser or model, resume with --retry-schema-blocked. Automatic identical paid retries are disabled.'
                         if any(s in error.lower() for s in ('unauthorized', 'invalid api key', 'invalid_api_key', 'authentication failed', 'status: 401', 'status: 403')):
                             self.state['auth_blocked'] = True
                             self.state['recheck_prerequisites'] = True
@@ -611,7 +671,7 @@ def prepare(args):
     name = args.name or datetime.now(timezone.utc).strftime('batch-%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,100}', name) or name in ('.', '..'):
         raise ValueError('--name must be a safe folder name (letters, numbers, dots, underscores, hyphens)')
-    config = read_json(args.config.expanduser().resolve()) if args.config else {
+    config = read_relocated_config(args.config) if args.config else {
         'version': 1, 'models': {'provider': 'soket', 'default_model': 'gemma-4-31b',
                                'fallback_models': ['gpt', 'qwen3-8-27b'], 'compact_planning': True},
         'backend': {'generator': 'blender', 'variation': 'procedural_pbr_v1', 'preview_renderer': 'cycles', 'exports': ['blend', 'glb']},
@@ -648,6 +708,7 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=ROOT / 'scene-runs')
     parser.add_argument('--resume', type=Path)
     parser.add_argument('--config', type=Path)
+    parser.add_argument('--recover-config', type=Path, help='With --resume, start new attempts under a revised config; preserve original runs, prompts and lifetime attempt limits')
     parser.add_argument('--fidelity', choices=('realistic', 'concept'), help='New jobs default to realistic; concept permits procedural proxies')
     review = parser.add_mutually_exclusive_group()
     review.add_argument('--require-visual-review', dest='visual_review', action='store_true', default=None, help='Require image review (default for new jobs)')
@@ -662,6 +723,9 @@ def main(argv=None):
     parser.add_argument('--retry-budget-blocked', action='store_true', help='Explicitly retry spending-limit-blocked tasks after reviewing/updating their saved run budgets')
     parser.add_argument('--retry-config-blocked', action='store_true', help='Retry after correcting blocked model configuration, including saved scene snapshots')
     parser.add_argument('--retry-auth-blocked', action='store_true', help='Retry after fixing credentials rejected by a previous model request')
+    parser.add_argument('--retry-asset-blocked', action='store_true', help='Retry after supplying missing source assets or fixing requirement classification')
+    parser.add_argument('--retry-assets-for', action='append', default=[], metavar='TASK_ID', help='Requeue only this asset-blocked task after supplying its sources; repeat for several tasks')
+    parser.add_argument('--retry-schema-blocked', action='store_true', help='Retry after correcting a response contract/parser or model that exhausted its bounded schema correction')
     parser.add_argument('--max-redesigns', type=int, help='Fresh-design recovery limit (default 2; 0 explicitly unlimited)')
     parser.add_argument('--retry-seconds', '--retry-base', type=float, default=10)
     parser.add_argument('--retry-max-seconds', '--retry-cap', type=float, default=300)
@@ -676,10 +740,21 @@ def main(argv=None):
             raise ValueError('Require workers 1..16, positive attempts/delays, retry max >= base, nonnegative redesigns')
         if args.cleanup and (not args.resume or args.dry_run or args.plan_only):
             raise ValueError('--cleanup requires --resume and cannot combine with --dry-run or --plan-only')
+        if args.recover_config and (not args.resume or args.cleanup):
+            raise ValueError('--recover-config requires --resume and cannot combine with --cleanup')
         binary = None if args.dry_run or args.cleanup else find_loop()
         path = prepare(args)
         batch = Batch(path, args, binary)
         batch.acquire()
+        unknown_retries = set(args.retry_assets_for) - {task['id'] for task in batch.state['tasks']}
+        if unknown_retries:
+            raise ValueError('Unknown asset-retry task IDs: ' + ', '.join(sorted(unknown_retries)))
+        for task in batch.state['tasks']:
+            if task['id'] in args.retry_assets_for and task.get('blocked_by') == 'assets':
+                task['next_retry_epoch'] = 0
+        if args.recover_config:
+            changed = batch.recover_config(args.recover_config)
+            print(f'Prepared {changed} unfinished tasks for revised-config attempts; historical runs preserved', flush=True)
         if args.cleanup:
             moved = sum(batch.archive_superseded(task) for task in batch.state['tasks'])
             batch.save()

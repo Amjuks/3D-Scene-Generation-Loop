@@ -68,6 +68,30 @@ class BatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '--resume uses saved'):
             module.prepare(self.args)
 
+    def test_recovery_config_preserves_snapshots_counters_and_dependency_paths(self):
+        self.plan()
+        task = self.batch.state['tasks'][0]
+        task.update(attempts=8, status='needs_attention', blocked_by='configuration')
+        task['overrides'] = {'quality': {'fidelity': 'concept', 'require_visual_review': True}}
+        run = self.make_run(task)
+        original_config = (self.batch.path / 'config.json').read_bytes()
+        original_state = module.read_json(self.batch.path / 'progress.json')
+        source_dir = self.root / 'profiles'
+        source_dir.mkdir()
+        source = source_dir / 'production.json'
+        module.atomic_json(source, {'version': 1, 'assets': {'catalog': '../sources/catalog.json'}, 'quality': {'fidelity': 'realistic', 'require_visual_review': True}})
+        changed = self.batch.recover_config(source)
+        self.assertEqual(changed, 3)
+        self.assertEqual(task['attempts'], 8)
+        self.assertTrue(task['fresh_next'])
+        self.assertNotIn('blocked_by', task)
+        self.assertEqual((self.batch.path / 'config.json').read_bytes(), original_config)
+        config = module.read_json(Path(self.batch.state['config']))
+        self.assertEqual(config['assets']['catalog'], str(self.root / 'sources/catalog.json'))
+        self.assertEqual(self.batch.recover_config(source), 0)
+        self.assertEqual(len(self.batch.state['configuration_history']), 1)
+        self.assertEqual(self.batch.scene_task(task)['overrides']['quality'], task['overrides']['quality'])
+
     def plan(self):
         def launch(key, command, log):
             request = module.read_json(Path(command[command.index('--request')+1]))
@@ -114,10 +138,67 @@ class BatchTests(unittest.TestCase):
             self.assertFalse(self.batch.generate())
             calls.assert_not_called()
 
+    def test_missing_assets_stop_once_and_budget_reservations_are_not_redesigned(self):
+        self.assertEqual(module.failure_kind('model budget cannot admit design_coordinator: 13 calls'), 'model_budget')
+        self.plan()
+        self.batch.state['tasks'] = self.batch.state['tasks'][:1]
+        task = self.batch.state['tasks'][0]
+        def launch(key, command, log):
+            log.write_text('required scene assets are unavailable; add matching production models to assets.catalog: whale skeleton')
+            self.make_run(task)
+            self.batch.live[key] = (Process(1), io.StringIO(), 0)
+        with patch.object(self.batch, 'launch', side_effect=launch) as calls, patch.object(module.time, 'sleep'):
+            self.assertFalse(self.batch.generate())
+            self.assertEqual(calls.call_count, 1)
+        self.assertEqual(task['blocked_by'], 'assets')
+        self.assertEqual(task['redesigns'], 0)
+        with patch.object(self.batch, 'launch') as calls:
+            self.assertFalse(self.batch.generate())
+            calls.assert_not_called()
+
     def test_generic_incomplete_summary_is_not_a_geometry_failure(self):
         self.assertEqual(module.failure_kind('one or more scenes are incomplete'), 'unknown')
         self.assertEqual(module.failure_kind('connection refused; one or more scenes are incomplete'), 'transient')
         self.assertEqual(module.failure_kind('HTTP 400: bad request; one or more scenes are incomplete'), 'configuration')
+
+    def test_asset_retry_can_target_only_the_task_with_new_sources(self):
+        self.plan()
+        for task in self.batch.state['tasks']:
+            task.update(status='needs_attention', blocked_by='assets')
+        chosen = self.batch.state['tasks'][1]
+        self.args.retry_assets_for = [chosen['id']]
+        def launch(key, command, log):
+            self.assertEqual(key, chosen['id'])
+            log.write_text('required scene assets are unavailable: another exact source')
+            self.make_run(chosen)
+            self.batch.live[key] = (Process(1), io.StringIO(), 0)
+        with patch.object(self.batch, 'launch', side_effect=launch) as calls:
+            self.assertFalse(self.batch.generate())
+            self.assertEqual(calls.call_count, 1)
+        self.assertEqual([t['attempts'] for t in self.batch.state['tasks']], [0, 1, 0])
+
+    def test_schema_correction_exhaustion_stops_paid_retries_until_explicit_resume(self):
+        self.plan()
+        self.batch.state['tasks'] = self.batch.state['tasks'][:1]
+        task = self.batch.state['tasks'][0]
+        def launch(key, command, log):
+            log.write_text('loop: model: structure_designer output remained invalid: decisions[0].recipes[0]: invalid type: map, expected a string')
+            self.make_run(task)
+            self.batch.live[key] = (Process(1), io.StringIO(), 0)
+        with patch.object(self.batch, 'launch', side_effect=launch) as calls:
+            self.assertFalse(self.batch.generate())
+            self.assertEqual(calls.call_count, 1)
+        self.assertEqual(task['blocked_by'], 'response_schema')
+        self.assertEqual(task['redesigns'], 0)
+        with patch.object(self.batch, 'launch') as calls:
+            self.assertFalse(self.batch.generate())
+            calls.assert_not_called()
+        self.args.retry_schema_blocked = True
+        with patch.object(self.batch, 'launch', side_effect=launch) as calls:
+            self.assertFalse(self.batch.generate())
+            self.assertEqual(calls.call_count, 1)
+        self.assertEqual(task['attempts'], 2)
+        self.assertEqual(module.failure_kind('visual review schema remained invalid: missing coverage_sufficient'), 'response_schema')
 
     def test_redesign_limit_survives_resume(self):
         self.plan()

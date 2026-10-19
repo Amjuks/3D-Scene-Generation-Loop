@@ -38,7 +38,7 @@ pub enum Role {
     RepairPlanner,
 }
 impl Role {
-    fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::PromptPlanner => "prompt_planner",
             Self::DiversityCritic => "diversity_critic",
@@ -174,8 +174,10 @@ struct RawCheckpoint {
 }
 fn save_raw_checkpoint(path: Option<(&Path, &str)>, value: &RawCheckpoint) -> Result<()> {
     if let Some((path, _)) = path {
-        crate::storage::atomic_write(path, &serde_json::to_vec_pretty(value)
-            .map_err(|e| SceneError::Storage(e.to_string()))?)?;
+        crate::storage::atomic_write(
+            path,
+            &serde_json::to_vec_pretty(value).map_err(|e| SceneError::Storage(e.to_string()))?,
+        )?;
     }
     Ok(())
 }
@@ -391,13 +393,17 @@ impl RoleInvoker {
         if let Some((path, input_hash)) = raw_path {
             if let Ok(bytes) = std::fs::read(path) {
                 if let Ok(saved) = serde_json::from_slice::<RawCheckpoint>(&bytes) {
-                    if saved.input_hash == input_hash && saved.prompt_version == def.prompt_version {
+                    if saved.input_hash == input_hash && saved.prompt_version == def.prompt_version
+                    {
                         for attempt in saved.attempts.iter().rev() {
                             if let Ok(output) = parse_json::<T>(&attempt.text) {
                                 eprintln!("Scene role {}: recovered request-matched paid response without a new model call", role.key());
-                                return Ok(RoleResponse { output,
+                                return Ok(RoleResponse {
+                                    output,
                                     tokens: saved.attempts.iter().map(|a| a.tokens).sum(),
-                                    model: attempt.model.clone(), prompt_version: saved.prompt_version });
+                                    model: attempt.model.clone(),
+                                    prompt_version: saved.prompt_version,
+                                });
                             }
                         }
                     }
@@ -415,7 +421,11 @@ impl RoleInvoker {
         let mut raw = RawCheckpoint {
             input_hash: raw_path.map_or("", |(_, hash)| hash).into(),
             prompt_version: def.prompt_version.into(),
-            attempts: vec![RawAttempt { text: first.0.clone(), tokens: first.1, model: first.2.clone() }],
+            attempts: vec![RawAttempt {
+                text: first.0.clone(),
+                tokens: first.1,
+                model: first.2.clone(),
+            }],
         };
         save_raw_checkpoint(raw_path, &raw)?;
         match parse_json::<T>(&first.0) {
@@ -438,7 +448,11 @@ impl RoleInvoker {
                 if let Some(r) = &self.reporter {
                     r.save_response(role.key(), &second.0)?;
                 }
-                raw.attempts.push(RawAttempt { text: second.0.clone(), tokens: second.1, model: second.2.clone() });
+                raw.attempts.push(RawAttempt {
+                    text: second.0.clone(),
+                    tokens: second.1,
+                    model: second.2.clone(),
+                });
                 save_raw_checkpoint(raw_path, &raw)?;
                 let output = parse_json(&second.0).map_err(|e| {
                     SceneError::Model(format!("{} output remained invalid: {e}", role.key()))
@@ -457,6 +471,15 @@ impl RoleInvoker {
         &self,
         spec: &SceneSpec,
         images: &[(&str, &Path)],
+    ) -> Result<RoleResponse<VisualReview>> {
+        self.review_images_checkpointed(spec, images, None).await
+    }
+
+    pub(crate) async fn review_images_checkpointed(
+        &self,
+        spec: &SceneSpec,
+        images: &[(&str, &Path)],
+        checkpoint: Option<&Path>,
     ) -> Result<RoleResponse<VisualReview>> {
         // Image review needs semantic intent and placements, not hundreds of
         // thousands of mesh coordinates or absolute source filesystem paths.
@@ -481,11 +504,37 @@ impl RoleInvoker {
                 mime_type: "image/png".into(),
             }));
         }
+        let input_hash = crate::storage::hash_bytes(
+            &serde_json::to_vec(&serde_json::json!({"blocks":blocks,"models":self.config,
+                "system":role_registry()[&Role::VisualReviewer].system}))
+            .map_err(|e| SceneError::Model(e.to_string()))?,
+        );
+        let prompt_version = role_registry()[&Role::VisualReviewer].prompt_version;
+        if let Some(path) = checkpoint {
+            if let Ok(bytes) = std::fs::read(path) {
+                if let Ok(saved) = serde_json::from_slice::<RawCheckpoint>(&bytes) {
+                    if saved.input_hash == input_hash && saved.prompt_version == prompt_version {
+                        for attempt in saved.attempts.iter().rev() {
+                            if let Ok(output) = parse_json::<VisualReview>(&attempt.text) {
+                                return Ok(RoleResponse {
+                                    output,
+                                    // Historical spending remains in telemetry;
+                                    // replay itself makes no new paid request.
+                                    tokens: 0,
+                                    model: attempt.model.clone(),
+                                    prompt_version: saved.prompt_version,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let (text, tokens, model) = self
             .call(
                 Role::VisualReviewer,
                 vec![Message::User(UserMessage {
-                    content: UserMessageContent::Blocks(blocks),
+                    content: UserMessageContent::Blocks(blocks.clone()),
                     timestamp: loop_ai::now_ms(),
                 })],
             )
@@ -493,8 +542,50 @@ impl RoleInvoker {
         if let Some(reporter) = &self.reporter {
             reporter.save_response(Role::VisualReviewer.key(), &text)?;
         }
-        let output = parse_json(&text)
-            .map_err(|e| SceneError::Model(format!("visual review schema: {e}")))?;
+        let mut raw = RawCheckpoint {
+            input_hash,
+            prompt_version: prompt_version.into(),
+            attempts: vec![RawAttempt {
+                text: text.clone(),
+                tokens,
+                model: model.clone(),
+            }],
+        };
+        save_raw_checkpoint(checkpoint.map(|path| (path, raw.input_hash.as_str())), &raw)?;
+        let (output, tokens, model) = match parse_json::<VisualReview>(&text) {
+            Ok(output) => (output, tokens, model),
+            Err(error) => {
+                // Keep the actual images and original requirements attached to
+                // the correction. Never turn a missing coverage field into a
+                // default pass, or spend another render just to repair JSON.
+                blocks.push(UserContent::Text(loop_ai::TextContent {
+                    text: format!("Your previous review failed schema validation at {error}. Return the COMPLETE corrected review in the exact requested schema, preserving all findings and using the attached images. Every finding requires needs_another_view (boolean); coverage_sufficient is also required. Do not omit a finding to fix its schema. Previous response:\n{}", truncate(&text, 24000)),
+                    text_signature: None,
+                }));
+                let (corrected, extra_tokens, corrected_model) = self
+                    .call(
+                        Role::VisualReviewer,
+                        vec![Message::User(UserMessage {
+                            content: UserMessageContent::Blocks(blocks),
+                            timestamp: loop_ai::now_ms(),
+                        })],
+                    )
+                    .await?;
+                if let Some(reporter) = &self.reporter {
+                    reporter.save_response(Role::VisualReviewer.key(), &corrected)?;
+                }
+                raw.attempts.push(RawAttempt {
+                    text: corrected.clone(),
+                    tokens: extra_tokens,
+                    model: corrected_model.clone(),
+                });
+                save_raw_checkpoint(checkpoint.map(|path| (path, raw.input_hash.as_str())), &raw)?;
+                let output = parse_json(&corrected).map_err(|e| {
+                    SceneError::Model(format!("visual review schema remained invalid: {e}"))
+                })?;
+                (output, tokens + extra_tokens, corrected_model)
+            }
+        };
         Ok(RoleResponse {
             output,
             tokens,
@@ -728,6 +819,131 @@ fn retryable_model_error(error: &SceneError) -> bool {
 mod retry_tests {
     use super::*;
     #[test]
+    fn schema_errors_identify_nested_fields_and_reject_trailing_json() {
+        let invalid = r#"{"findings":[{"severity":"error","affected_ids":[],"evidence":"hidden","confidence":1,"suggested_correction":"move camera","needs_another_view":{}}],"coverage_sufficient":false,"summary":"hidden"}"#;
+        let error = parse_json::<VisualReview>(invalid).unwrap_err();
+        assert!(error.contains("findings[0].needs_another_view"), "{error}");
+        assert!(parse_json::<serde_json::Value>("{} {}").is_err());
+    }
+
+    #[tokio::test]
+    async fn visual_schema_correction_is_bounded_and_bound_to_actual_images() {
+        use loop_ai::providers::{faux_provider, FauxResponse, FauxScript};
+        let script = FauxScript::new();
+        let provider = faux_provider(script.clone());
+        let mut model = provider.get_models().remove(0);
+        model.input.push(loop_ai::InputModality::Image);
+        provider.set_models(vec![model]);
+        let models = Arc::new(Models::new());
+        models.set_provider(provider);
+        let mut config = ModelsConfig::default();
+        config.provider = "faux".into();
+        config.default_model = "faux-model".into();
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("render.png");
+        std::fs::write(&image, b"first actual render").unwrap();
+        let reporter = crate::reporting::Reporter::new(dir.path());
+        let invoker = RoleInvoker::new(models, config).with_reporter(reporter.clone());
+        let spec = SceneSpec {
+            schema_version: 1,
+            root_id: "scene".into(),
+            prompt_summary: "tree".into(),
+            coordinate_system: "RH Z up".into(),
+            nodes: vec![],
+        };
+        let checkpoint = dir.path().join("review.raw.json");
+        script.push(FauxResponse::Text(
+            r#"{"findings":[],"summary":"cannot see tree"}"#.into(),
+        ));
+        script.push(FauxResponse::Text(
+            r#"{"findings":[],"coverage_sufficient":false,"summary":"cannot see tree"}"#.into(),
+        ));
+        let result = invoker
+            .review_images_checkpointed(&spec, &[("hero", &image)], Some(&checkpoint))
+            .await
+            .unwrap();
+        assert!(!result.output.coverage_sufficient);
+        assert_eq!(result.tokens, 2);
+        assert_eq!(reporter.model_usage().unwrap().0, 2);
+        let replay = invoker
+            .review_images_checkpointed(&spec, &[("hero", &image)], Some(&checkpoint))
+            .await
+            .unwrap();
+        assert!(!replay.output.coverage_sufficient);
+        assert_eq!(replay.tokens, 0);
+        assert_eq!(reporter.model_usage().unwrap().0, 2);
+        std::fs::write(&image, b"different actual render").unwrap();
+        script.push(FauxResponse::Text("{}".into()));
+        script.push(FauxResponse::Text("{}".into()));
+        assert!(invoker
+            .review_images_checkpointed(&spec, &[("hero", &image)], Some(&checkpoint))
+            .await
+            .is_err());
+        assert_eq!(reporter.model_usage().unwrap().0, 4);
+    }
+
+    #[tokio::test]
+    async fn request_bound_raw_response_recovers_schema_failures_without_new_spending() {
+        use loop_ai::providers::{faux_provider, FauxResponse, FauxScript};
+        #[derive(Deserialize)]
+        struct Strict {
+            _required: bool,
+        }
+        let script = FauxScript::new();
+        script.push(FauxResponse::Text("{\"old_name\":1}".into()));
+        script.push(FauxResponse::Text("{\"old_name\":2}".into()));
+        let models = Arc::new(Models::new());
+        models.set_provider(faux_provider(script.clone()));
+        let mut config = ModelsConfig::default();
+        config.provider = "faux".into();
+        config.default_model = "faux-model".into();
+        let dir = tempfile::tempdir().unwrap();
+        let reporter = crate::reporting::Reporter::new(dir.path());
+        let run = reporter
+            .begin("run", "replay", serde_json::json!({}))
+            .unwrap();
+        let invoker = RoleInvoker::new(models, config).with_reporter(reporter.clone());
+        let path = dir.path().join("raw.json");
+        let payload = serde_json::json!({"required_output":{"new_name":1}});
+        assert!(invoker
+            .invoke_json_checkpointed::<Strict>(
+                Role::SceneDirector,
+                &payload,
+                Some((&path, "request-a"))
+            )
+            .await
+            .is_err());
+        let usage = reporter.model_usage().unwrap();
+        assert_eq!(usage.0, 2);
+        #[derive(Deserialize)]
+        struct Migrated {
+            #[serde(alias = "old_name")]
+            new_name: usize,
+        }
+        let recovered = invoker
+            .invoke_json_checkpointed::<Migrated>(
+                Role::SceneDirector,
+                &payload,
+                Some((&path, "request-a")),
+            )
+            .await
+            .unwrap();
+        assert_eq!(recovered.output.new_name, 2);
+        assert_eq!(reporter.model_usage().unwrap(), usage);
+        script.push(FauxResponse::Text("{\"new_name\":3}".into()));
+        let fresh = invoker
+            .invoke_json_checkpointed::<Migrated>(
+                Role::SceneDirector,
+                &payload,
+                Some((&path, "request-b")),
+            )
+            .await
+            .unwrap();
+        assert_eq!(fresh.output.new_name, 3);
+        assert_eq!(reporter.model_usage().unwrap().0, 3);
+        run.finish("accepted", serde_json::json!({})).unwrap();
+    }
+    #[test]
     fn image_budget_scales_with_resolution_and_handles_unknown_formats() {
         let make = |width: u32, height: u32| {
             let mut bytes = vec![0u8; 48];
@@ -923,7 +1139,11 @@ fn parse_json<T: DeserializeOwned>(text: &str) -> std::result::Result<T, String>
     } else {
         trimmed.to_string()
     };
-    serde_json::from_str(&value).map_err(|e| e.to_string())
+    let mut deserializer = serde_json::Deserializer::from_str(&value);
+    let output = serde_path_to_error::deserialize(&mut deserializer).map_err(|e| e.to_string())?;
+    // deserialize alone accepts a prefix. Retain from_str's trailing-data guard.
+    deserializer.end().map_err(|e| e.to_string())?;
+    Ok(output)
 }
 fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()

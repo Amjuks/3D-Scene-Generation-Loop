@@ -430,8 +430,16 @@ impl SceneRunController {
                     )
                 })
                 .collect();
-            let review = invoker.review_images(&spec, &labeled).await?;
-            self.account(store, config, review.tokens)?;
+            let review = invoker
+                .review_images_checkpointed(
+                    &spec,
+                    &labeled,
+                    Some(&root.join("validation").join("visual-review-raw.json")),
+                )
+                .await?;
+            if review.tokens > 0 {
+                self.account(store, config, review.tokens)?;
+            }
             let findings = validation::visual_findings_for_policy(
                 &review.output,
                 config.quality.require_no_visual_warnings,
