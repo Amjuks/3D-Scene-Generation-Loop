@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "planning": {
+    "mode": "adaptive",
+    "max_regions": 24,
+    "max_objects_per_region": 96,
+    "max_extent_m": 100000
+  },
+  "models": {
+    "provider": "soket",
+    "default_model": "gemma-4-31b",
+    "fallback_models": [],
+    "roles": {
+      "visual_reviewer": {
+        "model": "gemma-4-31b",
+        "requires_images": true,
+        "max_tokens": 4096
+      }
+    }
+  },
+  "assets": {
+    "catalog": "../../scene-assets/catalog.json"
+  },
+  "quality": {
+    "fidelity": "realistic",
+    "require_visual_review": true,
+    "preview_resolution": [
+      1280,
+      960
+    ],
+    "preview_samples": 64,
+    "max_triangles": 4000000
+  },
+  "backend": {
+    "preview_renderer": "cycles"
+  },
+  "execution": {
+    "max_agent_tasks": 3,
+    "max_blender_processes": 2,
+    "task_timeout_seconds": 1200
+  },
+  "budgets": {
+    "max_model_calls": 96,
+    "max_total_tokens": 750000,
+    "max_nodes": 1024
+  },
+  "storage": {
+    "output_root": "../../scene-runs/adaptive",
+    "min_free_bytes": 5000000000
+  }
+}

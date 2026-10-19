@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "pine-regeneration-context",
+      "seed": 294,
+      "prompt": "A realistic 28m by 24m young pine regeneration landscape viewed from within the environment, with a gently undulating low hillside, natural dry forest soil, several weathered rock outcrops, and a clear meandering informal walking corridor. This is a small outdoor world with continuous surrounding ground filling the near and middle-distance camera frame, not objects floating against a void and not a raised rectangular display platform. Place exactly 48 young saplings using all three real source variants polyhaven:pine_sapling_small_a, polyhaven:pine_sapling_small_b and polyhaven:pine_sapling_small_c (16 each). Use each source variant at its actual catalogue dimensions and full original geometry/textures; these are about one metre high, not mature trees. Author three asset prototype Objects with distribution polygons and exclusion polygons, at least 1.2m center spacing and irregular species planting patches that keep the walking corridor clear. Every instance counts toward object_budget, allocate at least 54 total geometry objects. Keep this coherent site in ONE region so all instances and rocks can reference the same ground support. Use real polyhaven:rock_09 assets at several believable scales and orientations for outcrops. Shape a low continuous heightfield with gently sloped relief and use polyhaven:forest_ground_04 as terrain finish, material_usage landscape_ground and metric texture scale about 2m. All trees and rocks must declare ground support, with no floating roots. Author a physical sky near strength 0.2, exposure 0, clear mid-afternoon sun with recognizable shadows. Place two carefully aimed review cameras within the plot: a near-eye-level view that shows real needles and branches with other trees and terrain behind it, and an elevated view showing the entire planting and clear corridor. The foreground, middle ground and planting background must read as one natural outdoor environment. Preserve the exact requested counts and source morphology, no primitive trees, room shell or furniture."
+    }
+  ]
+}

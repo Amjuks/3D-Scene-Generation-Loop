@@ -16,18 +16,16 @@ use loop_ai::providers::{
     custom_provider, soket_provider, CustomModelSpec, CustomProviderConfig, SOKET_API_KEY_ENVS,
     SOKET_DEFAULT_MODEL_ID, SOKET_PROVIDER_ID,
 };
-use loop_ai::{
-    CreateModelsOptions, FileModelsStore, Models, ModelsRefreshOptions,
-};
+use loop_ai::{CreateModelsOptions, FileModelsStore, Models, ModelsRefreshOptions};
 
 use crate::config::auth::{provider_has_key, FileCredentialStore};
+use crate::config::paths::trust_path;
 use crate::config::paths::{
     auth_path, ensure_agent_dirs, get_agent_dir, models_json_path, models_store_path,
     sessions_db_path, settings_path,
 };
 use crate::config::settings::{load_settings, McpServerConfig, Settings};
 use crate::config::trust::TrustStore;
-use crate::config::paths::{trust_path};
 use crate::resources::{load_resources, LoadedResources};
 use crate::system_prompt::{
     build_system_prompt, default_tool_snippets, load_context_files, resolve_system_prompt_files,
@@ -146,7 +144,8 @@ fn load_custom_models_json(agent_dir: &Path, models: &Models) -> anyhow::Result<
     }
     let raw = std::fs::read_to_string(path)?;
     let value: serde_json::Value = serde_json::from_str(&raw)?;
-    // Support { "providers": [ { id, baseUrl, apiKeyEnv, models: ["id"] } ] }
+    // Model objects retain declared modalities; dropping input=image makes
+    // every custom endpoint appear text-only and disables scene image review.
     if let Some(arr) = value.get("providers").and_then(|v| v.as_array()) {
         for p in arr {
             let id = p.get("id").and_then(|v| v.as_str()).unwrap_or("custom");
@@ -165,21 +164,15 @@ fn load_custom_models_json(agent_dir: &Path, models: &Models) -> anyhow::Result<
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            let model_specs = p
+            let model_specs: Vec<CustomModelSpec> = p
                 .get("models")
                 .and_then(|v| v.as_array())
                 .map(|a| {
                     a.iter()
-                        .filter_map(|m| {
-                            if let Some(s) = m.as_str() {
-                                Some(CustomModelSpec::new(s))
-                            } else {
-                                let id = m.get("id")?.as_str()?;
-                                Some(CustomModelSpec::new(id))
-                            }
-                        })
-                        .collect::<Vec<_>>()
+                        .map(parse_custom_model)
+                        .collect::<anyhow::Result<Vec<_>>>()
                 })
+                .transpose()?
                 .unwrap_or_default();
             if model_specs.is_empty() {
                 continue;
@@ -198,6 +191,57 @@ fn load_custom_models_json(agent_dir: &Path, models: &Models) -> anyhow::Result<
         }
     }
     Ok(())
+}
+
+fn parse_custom_model(value: &serde_json::Value) -> anyhow::Result<CustomModelSpec> {
+    if let Some(id) = value.as_str() {
+        return Ok(CustomModelSpec::new(id));
+    }
+    let id = value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .context("custom model requires id")?;
+    let mut spec = CustomModelSpec::new(id);
+    spec.name = value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    spec.reasoning = value
+        .get("reasoning")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if let Some(input) = value.get("input") {
+        spec.input =
+            Some(serde_json::from_value(input.clone()).context("custom model input modalities")?);
+    }
+    spec.context_window = value
+        .get("context_window")
+        .or_else(|| value.get("contextWindow"))
+        .and_then(|v| v.as_u64());
+    spec.max_tokens = value
+        .get("max_tokens")
+        .or_else(|| value.get("maxTokens"))
+        .and_then(|v| v.as_u64());
+    Ok(spec)
+}
+
+#[cfg(test)]
+mod custom_model_tests {
+    use super::*;
+    #[test]
+    fn custom_image_modality_is_retained_and_invalid_values_fail() {
+        let spec=parse_custom_model(&serde_json::json!({"id":"vision","input":["text","image"],"contextWindow":64000,"maxTokens":4000})).unwrap();
+        assert!(spec.input.unwrap().contains(&loop_ai::InputModality::Image));
+        assert_eq!(spec.context_window, Some(64000));
+        assert_eq!(spec.max_tokens, Some(4000));
+        assert!(
+            parse_custom_model(&serde_json::json!({"id":"bad","input":["imaginary"]})).is_err()
+        );
+        assert!(parse_custom_model(&serde_json::json!("legacy-text"))
+            .unwrap()
+            .input
+            .is_none());
+    }
 }
 
 /// Resolve project trust (ask interactively when needed).
@@ -223,10 +267,7 @@ pub fn resolve_trust(
             if !interactive {
                 return Ok(false);
             }
-            eprintln!(
-                "Trust project config from {}? [y/N]",
-                cwd.display()
-            );
+            eprintln!("Trust project config from {}? [y/N]", cwd.display());
             let mut answer = String::new();
             std::io::Write::write_all(&mut std::io::stderr(), b"> ").ok();
             std::io::stdin().read_line(&mut answer)?;
@@ -443,7 +484,10 @@ pub async fn bootstrap(opts: BootstrapOpts) -> anyhow::Result<Runtime> {
 
     let theme_dirs = theme_search_dirs(
         &agent_dir,
-        project_trusted.then_some(crate::config::paths::get_project_dir(&opts.cwd)).as_ref().map(|p| p.as_path()),
+        project_trusted
+            .then_some(crate::config::paths::get_project_dir(&opts.cwd))
+            .as_ref()
+            .map(|p| p.as_path()),
     );
     let theme = Theme::load(&settings.theme, &theme_dirs).unwrap_or_else(|_| Theme::dark());
 
@@ -459,7 +503,8 @@ pub async fn bootstrap(opts: BootstrapOpts) -> anyhow::Result<Runtime> {
         }
         let mcp_tools = loop_agent::harness::mcp::bridge::mcp_tools_to_agent_tools_async(
             mcp_client.connections(),
-        ).await;
+        )
+        .await;
         if !mcp_tools.is_empty() {
             let mut all_tools = harness.get_tools().await;
             all_tools.extend(mcp_tools);
@@ -500,13 +545,21 @@ pub fn mcp_server_entries(
         let transport = if let Some(url) = &cfg.url {
             loop_mcp::McpTransport::Http {
                 url: url.clone(),
-                headers: cfg.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                headers: cfg
+                    .headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
             }
         } else if let Some(command) = &cfg.command {
             loop_mcp::McpTransport::Stdio {
                 command: command.clone(),
                 args: cfg.args.clone(),
-                env: cfg.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                env: cfg
+                    .env
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
             }
         } else {
             tracing::warn!("mcp: skipping '{name}': neither 'command' nor 'url' configured");

@@ -17,6 +17,35 @@ pub struct BlenderBackend {
 }
 
 impl BlenderBackend {
+    /// Hash the actual worker modules so changed backend code cannot reuse stale components.
+    pub(crate) fn worker_fingerprint() -> Result<String> {
+        static FINGERPRINT: std::sync::OnceLock<std::result::Result<String, String>> =
+            std::sync::OnceLock::new();
+        FINGERPRINT
+            .get_or_init(|| Self::compute_worker_fingerprint().map_err(|error| error.to_string()))
+            .clone()
+            .map_err(SceneError::Backend)
+    }
+    fn compute_worker_fingerprint() -> Result<String> {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("backends/blender");
+        let mut paths = std::fs::read_dir(&folder)
+            .map_err(|e| SceneError::Backend(e.to_string()))?
+            .map(|e| e.map(|e| e.path()))
+            .collect::<std::io::Result<Vec<_>>>()
+            .map_err(|e| SceneError::Backend(e.to_string()))?;
+        paths.retain(|p| p.extension().is_some_and(|e| e == "py"));
+        paths.sort();
+        let mut modules = Vec::new();
+        for path in paths {
+            modules.push((
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                crate::storage::hash_file(&path)?,
+            ));
+        }
+        Ok(crate::storage::hash_bytes(
+            &serde_json::to_vec(&modules).map_err(|e| SceneError::Backend(e.to_string()))?,
+        ))
+    }
     /// Resolve configured/PATH/known local Blender installations.
     pub fn new(config: SceneConfig) -> Result<Self> {
         let executable =
@@ -39,7 +68,8 @@ impl BlenderBackend {
             "--background",
             "--factory-startup",
             "--disable-autoexec",
-            "--python-exit-code", "31",
+            "--python-exit-code",
+            "31",
             "--python",
         ])
         .arg(script)
@@ -198,7 +228,7 @@ impl SceneBackend for BlenderBackend {
             self.config.quality.preview_resolution[0],
             self.config.quality.preview_resolution[1],
         );
-        self.run_job(&json!({"mode":"assembly","scene":spec,"output_dir":output_dir,"renderer":self.config.backend.preview_renderer,"resolution":[w,h],"samples":self.config.quality.preview_samples}),output_dir).await?;
+        self.run_job(&json!({"mode":"assembly","scene":spec,"output_dir":output_dir,"renderer":self.config.backend.preview_renderer,"resolution":[w,h],"samples":self.config.quality.preview_samples,"final_render":{"renderer":"cycles","resolution":self.config.quality.final_resolution,"samples":self.config.quality.final_samples}}),output_dir).await?;
         let blend = output_dir.join("scene.blend");
         let glb = output_dir.join("scene.glb");
         let inspection = output_dir.join("inspection.json");

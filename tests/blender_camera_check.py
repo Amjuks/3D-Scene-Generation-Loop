@@ -21,3 +21,26 @@ plans = worker.camera_plan(worker.inspect_scene(), nodes, Path("."))
 assert plans[0][1].y > 0, plans[0]
 assert any(p[0] == "structure_detail" for p in plans)
 print("CAMERA OCCLUSION REGRESSION PASSED", flush=True)
+
+# Authored regional views use the actual hierarchy transform and take priority
+# over room heuristics. Invalid paths cannot escape the preview output folder.
+import bpy
+import math
+from mathutils import Vector
+root=bpy.data.objects['house']
+root.location=(10,20,3)
+root.rotation_mode='XYZ';root.rotation_euler.z=math.pi/2
+bpy.context.view_layer.update()
+nodes[0]['generation']['parameters']['review_cameras']=[{
+    'id':'../hero','position':[0,-6,2],'target':[0,0,1],'lens_mm':55,'coverage':'hero'}]
+plans=worker.camera_plan(worker.inspect_scene(),nodes,Path('.'))
+assert len(plans)==4,plans
+name,pos,target=plans[-1]
+assert '/' not in name and '.' not in name,name
+assert (pos-Vector((16,20,5))).length<1e-5,(name,pos,target)
+assert (target-Vector((10,20,4))).length<1e-5,(name,pos,target)
+nodes[0]['generation']['parameters']['review_cameras'][0]['position']=[float('nan'),0,0]
+try:worker.camera_plan(worker.inspect_scene(),nodes,Path('.'))
+except ValueError as error:assert 'finite' in str(error)
+else:raise AssertionError('non-finite authored camera accepted')
+print('AUTHORED CAMERA TRANSFORM AND VALIDATION PASSED',flush=True)

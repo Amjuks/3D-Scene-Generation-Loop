@@ -120,16 +120,11 @@ fn validate(request: &PromptRequest, candidates: &Candidates) -> Result<()> {
             let old_tokens = words(&old.prompt);
             let similarity = tokens.intersection(&old_tokens).count() as f64
                 / tokens.union(&old_tokens).count().max(1) as f64;
-            let axes = ["layout", "setting", "form"].iter().all(|axis| {
-                item.diversity
-                    .get(*axis)
-                    .zip(old.diversity.get(*axis))
-                    .is_some_and(|(a, b)| normalized(a) == normalized(b))
-            });
+            // Broad axis labels are not realized geometry. A constrained single-room
+            // brief may intentionally share them across distinct functional programs.
             if normalized(&item.name) == normalized(&old.name)
                 || normalized(&item.prompt) == normalized(&old.prompt)
                 || similarity > 0.78
-                || axes
             {
                 return Err(invalid(format!(
                     "concept {} repeats {}: change topology, setting and silhouette substantively",
@@ -252,39 +247,41 @@ fn creative_stimuli(request: &PromptRequest) -> Vec<Value> {
     if !request.existing.is_empty() || !request.rejection_feedback.is_null() {
         return Vec::new();
     }
+    // Seed questions, not a fixed catalogue of architectural forms or settings.
+    // The subject may be a landscape, object, infrastructure, habitat or world.
     let layouts = [
-        "branching inhabited spine",
-        "loose constellation of unequal clusters",
-        "descending terraces around a void",
-        "winding ribbon with pocket spaces",
-        "off-centre courtyard and broken perimeter",
-        "radial fan with uneven wings",
-        "stacked interlocking volumes",
-        "landscape-following crescent",
-        "fragmented archipelago linked by paths",
-        "canyon-like passage with side chambers",
-        "compact sculpted monolith with carved pockets",
-        "multi-level loop around an open landmark",
+        "derive organization from the subject's physical processes and use",
+        "derive relationships from the essential functional program",
+        "identify which negative spaces are physically necessary",
+        "follow the actual geology, biology or construction system",
+        "resolve the dominant volume and its smaller dependent elements",
+        "consider where people, water, vehicles or organisms move, if applicable",
+        "choose boundaries appropriate to the actual subject",
+        "derive density and spacing from physical and ecological constraints",
+        "identify the subject-specific focal structure or landform",
+        "consider elevation changes only where physically justified",
+        "identify real construction contacts and support relationships",
+        "consider the characteristic silhouette without inventing a building",
     ];
     let settings = [
-        "weathered coastal edge",
-        "lush valley clearing",
-        "dense urban infill",
-        "arid rock basin",
-        "steep wooded hillside",
-        "floodplain on raised supports",
-        "snow-lit highland",
-        "abandoned industrial landscape",
-        "subterranean rock chamber",
-        "floating island garden",
-        "riverside escarpment",
+        "use the user's required geographical and cultural context",
+        "consider exposure and material weathering appropriate to the subject",
+        "ground the design in a coherent physical environment",
+        "identify the real ecological or urban context, if relevant",
+        "preserve the requested era and construction techniques",
+        "derive environmental detail from the scene's actual location",
+        "use references appropriate to the subject's identity",
+        "account for surrounding context at the requested scale",
+        "distinguish lived-in detail from arbitrary decoration",
+        "include seasonal or climatic effects only where appropriate",
+        "identify characteristic materials rather than changing palette alone",
     ];
     let scales = [
-        "intimate craft and close detail",
-        "medium public gathering spaces",
-        "one monumental landmark with small supporting spaces",
-        "compact vertical exploration",
-        "landscape-spread low structures",
+        "preserve the requested extent and identify foreground detail",
+        "allocate detail by visibility and semantic importance",
+        "identify repeated asset families and meaningful variations",
+        "plan consistent units from the smallest feature to the whole scene",
+        "partition large extents into coherent regions without shrinking scope",
     ];
     (0..request.count).map(|i| {
         let category_hash = request.category.trim().to_lowercase().bytes().fold(14695981039346656037u64, |h,b| h.wrapping_mul(1099511628211) ^ u64::from(b));
@@ -373,9 +370,9 @@ async fn plan_chunk(
             serde_json::from_value(draft.clone()).map_err(|e| invalid(e.to_string()))?
         } else {
             invoker.invoke_json::<Candidates>(Role::PromptPlanner,&json!({
-                "category":request.category,"count":request.count,"seed":request.seed,"offset":request.offset,"briefs":request.briefs,"creative_stimuli":if feedback.is_null() {creative_stimuli(request)} else {vec![]},"stimulus_policy":"These are optional inspiration only, never required layouts or settings. Required corrections take precedence over every stimulus. When the list is empty, invent new spatial arrangements from the category, user briefs and corrections; there is no required menu. For each rejected candidate, implement the concrete replacement direction when buildable and consistent with the category, rather than rewording the rejected geometry. Preserve candidates not mentioned in the feedback unless necessary to resolve a conflict. If a stimulus resembles an existing concept or was rejected, discard it entirely and invent a different spatial organization and context. Do not copy stimulus labels into the diversity ledger. Invent distinct actual geometry, room functions, landmarks and circulation beyond this finite list.",
+                "category":request.category,"count":request.count,"seed":request.seed,"offset":request.offset,"briefs":request.briefs,"creative_stimuli":if feedback.is_null() {creative_stimuli(request)} else {vec![]},"stimulus_policy":"These are optional inspiration only, never required layouts or settings. Required corrections take precedence over every stimulus. When the list is empty, invent new spatial arrangements from the category, user briefs and corrections; there is no required menu. For each rejected candidate, implement the concrete replacement direction when buildable and consistent with the category, rather than rewording the rejected geometry. Preserve candidates not mentioned in the feedback unless necessary to resolve a conflict. If a stimulus resembles an existing concept or was rejected, discard it entirely and invent a different spatial organization and context. Do not copy stimulus labels into the diversity ledger. Derive actual geometry, subject-specific elements, physical processes and spatial relationships from the requested subject. These questions are not a menu of scene types.",
                 "existing_concept_ledger":ledger,"total_prior_concepts":request.existing.len(),"most_repeated_prior_axes":repeated,"previous_candidates":draft,"required_corrections":feedback,
-                "contract":"Return {prompts:[{name:string,prompt:string,diversity:{layout:string,setting:string,form:string,materials:string,atmosphere:string,circulation:string}}]}. EXACTLY count concepts, unique names <=120 characters. Each prompt 120-240 words. No numbering variants of one template. Specify distinctive spatial organization, memorable silhouette, setting, program and detailed occupied spaces. Vary organic/asymmetric/terraced/radial/linear/courtyard/fragmented/elevated/subterranean spatial arrangements as appropriate, not every feature in every scene. Furnish each usable room according to its function. Some concepts can be open-air. Do not default every building to rectangular paired boxes, a central cross corridor, symmetric blocks or a roof hiding all detail. Describe physical structure and practical assembly, not impossible abstract metaphors. Limit scope to a strong camera-readable detailed scene rather than an entire empty city. Achieve variation through layout, form, context and program; palette alone is insufficient. Each prompt is self-contained and respects the user's category and constraints. Seed is a creative identifier, not a scene style."
+                "contract":"Return {prompts:[{name:string,prompt:string,diversity:{layout:string,setting:string,form:string,materials:string,atmosphere:string,circulation:string}}]}. EXACTLY count concepts, unique names <=120 characters. Each prompt 120-700 words within the character limit. No numbering variants of one template. Specify the actual subject, spatial organization, characteristic silhouette, physical setting, scale and domain-specific elements. Name 3-8 essential recognizable features and the morphology/material details needed to make them credible; include these in a domain_specific_elements diversity axis. Add a program axis explaining actual use and a scale axis. Buildings and furnished rooms belong only where the subject requires them; landscapes, natural environments, object studies, infrastructure, unoccupied spaces and game worlds must not acquire generic room shells or furniture. Derive topology from physical needs and references, not compulsory architectural variety. Do not default every building to rectangular paired boxes, a central cross corridor, symmetric blocks or a roof hiding all detail. Describe physical structure and practical assembly, not impossible abstract metaphors. Preserve the requested spatial extent, including city or landscape scales. Describe region hierarchy, repeatable asset families and detail priorities for large scenes rather than reducing them to a room-sized diorama. Achieve variation through layout, form, context and program; palette alone is insufficient. Each prompt is self-contained and respects the user's category and constraints. Seed is a creative identifier, not a scene style."
             })).await?.output
         };
         draft = serde_json::to_value(&candidates).map_err(|e| invalid(e.to_string()))?;
@@ -388,7 +385,7 @@ async fn plan_chunk(
             save_draft(&cache, request, &hash, &draft, &feedback)?;
             continue;
         }
-        let critique=invoker.invoke_json::<Critique>(Role::DiversityCritic,&json!({"category":request.category,"existing_concept_ledger":ledger,"candidates":draft,"contract":"Return {approved:boolean,issues:[string]}. Review every candidate against every other candidate and prior concepts using their actual geometry and functional program. Each duplicate rejection must name ONE specific prior or peer concept and describe the same concrete spatial arrangement AND silhouette/program in both. Do not combine a layout match to one scene with a setting match to a different scene to manufacture a duplicate. Broad labels alone are insufficient evidence; do not infer missing details from a truncated excerpt. Approve substantively different spatial layout/silhouette/context/program combinations, not decorative variants. Evaluate the combination: sharing a broad setting or layout family alone is not grounds for rejection when actual geometry, silhouette and functional program differ. This is a large multi-category batch, so individual axes can recur. Prompts must include detailed functional occupied spaces when appropriate, coherent spatial design, and respect category. If rejected, give candidate names and concrete replacement directions. Return issues:[] only if approved."})).await?;
+        let critique=invoker.invoke_json::<Critique>(Role::DiversityCritic,&json!({"category":request.category,"existing_concept_ledger":ledger,"candidates":draft,"contract":"Return {approved:boolean,issues:[string]}. Review every candidate against every other candidate and prior concepts using their actual geometry and functional program. Each duplicate rejection must name ONE specific prior or peer concept and describe the same concrete spatial arrangement AND silhouette/program in both. Do not combine a layout match to one scene with a setting match to a different scene to manufacture a duplicate. Broad labels alone are insufficient evidence; do not infer missing details from a truncated excerpt. Approve substantively different spatial layout/silhouette/context/program combinations, not decorative variants. Evaluate the combination: sharing a broad setting or layout family alone is not grounds for rejection when actual geometry, silhouette and functional program differ. This is a large multi-category batch, so individual axes can recur. Prompts must include the essential subject-specific objects and morphology, coherent physical relationships and the requested scale. Reject generic furniture added to landscapes or empty spaces, category landmarks replaced by generic display props, and a repeated room-and-interior template when not requested. Buildings and occupied interiors are not a universal requirement. Respect intentional repetition explicitly required by the user, including fixed room dimensions or a consistent series; judge distinctions through domain-specific program and modeled content in that case. If rejected, give candidate names and concrete replacement directions. Return issues:[] only if approved."})).await?;
         atomic_write(
             &root.join("latest-critique.json"),
             &serde_json::to_vec_pretty(
@@ -430,7 +427,8 @@ mod tests {
     fn established_batches_and_rejected_drafts_do_not_reuse_seed_menu() {
         let mut r = request(5);
         assert_eq!(creative_stimuli(&r).len(), 5);
-        r.existing.push(concept("Existing showroom", "branching spine"));
+        r.existing
+            .push(concept("Existing showroom", "branching spine"));
         assert!(creative_stimuli(&r).is_empty());
         r.existing.clear();
         r.rejection_feedback = json!(["Replace the branching spine with a column hall"]);
@@ -440,7 +438,8 @@ mod tests {
     #[test]
     fn critic_gets_real_prompt_context_with_bounded_unicode_excerpts() {
         let mut r = request(1);
-        r.existing.push(concept("Existing showroom", "branching spine"));
+        r.existing
+            .push(concept("Existing showroom", "branching spine"));
         let (ledger, _) = compact_ledger(&r);
         assert_eq!(ledger[0]["prompt_excerpt"], r.existing[0].prompt);
         assert_eq!(ledger[0]["excerpt_truncated"], false);
@@ -450,7 +449,13 @@ mod tests {
             r.existing.push(p);
         }
         let (ledger, _) = compact_ledger(&r);
-        assert!(ledger.iter().map(|p| p["prompt_excerpt"].as_str().unwrap().chars().count()).sum::<usize>() <= 48_000);
+        assert!(
+            ledger
+                .iter()
+                .map(|p| p["prompt_excerpt"].as_str().unwrap().chars().count())
+                .sum::<usize>()
+                <= 48_000
+        );
         assert!(ledger.iter().any(|p| p["excerpt_truncated"] == true));
     }
 
@@ -587,7 +592,7 @@ mod tests {
         PlannedPrompt {name:name.into(),prompt:format!("{name} {}", "detailed spatial program with occupied galleries furnishing physical structure circulation ".repeat(4)),diversity:[("layout",layout),("setting","forest"),("form",layout),("materials","wood"),("atmosphere","morning"),("circulation","winding")].into_iter().map(|(a,b)|(a.into(),b.into())).collect()}
     }
     #[test]
-    fn rejects_duplicate_names_counts_and_layouts() {
+    fn rejects_duplicate_names_counts_and_prompts() {
         let a = concept("Forest museum", "spiral");
         let r = PromptRequest {
             category: "museum".into(),
@@ -602,10 +607,12 @@ mod tests {
         };
         assert!(validate(&r, &Candidates { prompts: vec![] }).is_err());
         assert!(validate(&r, &Candidates { prompts: vec![a] }).is_err());
+        let mut renamed = concept("New name", "spiral");
+        renamed.prompt = r.existing[0].prompt.clone();
         assert!(validate(
             &r,
             &Candidates {
-                prompts: vec![concept("New name", "spiral")]
+                prompts: vec![renamed]
             }
         )
         .is_err());
@@ -627,6 +634,21 @@ mod tests {
             &r,
             &Candidates {
                 prompts: vec![concept("Forest museum", "spiral")]
+            }
+        )
+        .is_ok());
+    }
+    #[test]
+    fn broad_axis_labels_do_not_reject_distinct_subjects_in_a_constrained_series() {
+        let mut r = request(1);
+        r.existing
+            .push(concept("Forest museum", "rectangular room"));
+        let mut next = concept("Tidal laboratory", "rectangular room");
+        next.prompt = "A coastal research laboratory records tidal organisms through microscopes and specimen tanks. Stainless workbenches carry pipettes, sample jars, test instruments and trays of living specimens. Clear hoses connect tanks to calibrated filtration machinery, beside practical safety equipment and waterproof cabinetry.".into();
+        assert!(validate(
+            &r,
+            &Candidates {
+                prompts: vec![next]
             }
         )
         .is_ok());

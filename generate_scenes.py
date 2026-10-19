@@ -142,7 +142,7 @@ def main(argv=None):
     probe.add_argument("input", nargs="?")
     for flag in ("--config", "--briefs", "--output", "--name", "--resume", "--workers",
                  "--seed", "--max-attempts", "--retry-base", "--retry-cap",
-                 "--retry-seconds", "--retry-max-seconds", "--max-redesigns"):
+                 "--retry-seconds", "--retry-max-seconds", "--max-redesigns", "--fidelity"):
         probe.add_argument(flag)
     probe.add_argument("--dry-run", action="store_true")
     probe.add_argument("--plan-only", action="store_true")
@@ -163,14 +163,21 @@ def main(argv=None):
     parser.add_argument("--config", type=Path,
                         help="Optional existing scene config, including reviewer role settings")
     parser.add_argument("--dry-run", action="store_true", help="Prepare inputs without model calls")
-    parser.add_argument("--require-visual-review", action="store_true",
-                        help="Require image-model review in addition to geometry/export checks")
+    parser.add_argument("--fidelity", choices=("realistic", "concept"),
+                        help="New jobs default to realistic; concept permits procedural proxies")
+    review = parser.add_mutually_exclusive_group()
+    review.add_argument("--require-visual-review", dest="visual_review", action="store_true", default=None,
+                        help="Require image-model review (default for new jobs)")
+    review.add_argument("--skip-visual-review", dest="visual_review", action="store_false",
+                        help="Skip image review; requires --fidelity concept")
     args = parser.parse_args(argv)
     try:
         if args.refresh_batch:
             if args.prompts:raise ValueError("Use either prompts or --refresh-batch, not both")
             refresh_batch(args.refresh_batch.resolve());print(f"Reports refreshed: {args.refresh_batch.resolve() / 'index.html'}");return 0
         if args.prompts is None:raise ValueError("Provide a prompt file or --refresh-batch")
+        if args.visual_review is False and args.fidelity != "concept":
+            raise ValueError("--skip-visual-review requires --fidelity concept; realistic output requires actual-image review")
         prompts = read_prompts(args.prompts)
         binary = None if args.dry_run else find_loop()
         config = args.config.expanduser().resolve() if args.config else None
@@ -189,20 +196,27 @@ def main(argv=None):
                 "backend": {"generator": "blender", "variation": "procedural_pbr_v1",
                             "preview_renderer": "cycles", "exports": ["blend", "glb"]},
                 "quality": {"preview_resolution": [1600, 1200], "preview_samples": 64,
-                            "require_visual_review": args.require_visual_review},
+                            "fidelity": args.fidelity or "realistic",
+                            "require_visual_review": args.visual_review is not False},
                 "storage": {"output_root": str(batch / "scenes"),
                             "asset_library": str(args.output.expanduser().resolve() / "library"),
                             "min_free_bytes": 2000000000},
             })
+        quality_overrides = {}
+        if args.fidelity is not None:
+            quality_overrides["fidelity"] = args.fidelity
+            if args.fidelity == "realistic":
+                quality_overrides["require_visual_review"] = True
+        if args.visual_review is not None:
+            quality_overrides["require_visual_review"] = args.visual_review
         tasks = [{"id": f"scene-{i:03d}", "prompt": prompt, "enabled": True,
                   "overrides": {"storage": {"output_root": str(batch / "scenes")},
-                                **({"quality": {"require_visual_review": True}}
-                                   if args.require_visual_review else {})}}
+                                **({"quality": quality_overrides} if quality_overrides else {})}}
                  for i, prompt in enumerate(prompts, 1)]
         write_json(batch / "tasks.json", {"version": 1, "tasks": tasks})
         print(f"{len(tasks)} scene(s). Output: {batch}", flush=True)
-        if args.config is None and not args.require_visual_review:
-            print("Generation mode: geometry/export checks enabled; automated visual review disabled.", flush=True)
+        if args.config is None:
+            print(f"Generation fidelity: {args.fidelity or 'realistic'}; actual-image review: {'disabled' if args.visual_review is False else 'required'}.", flush=True)
         if args.dry_run:
             print("Inputs prepared; no generation or model calls performed.")
             return 0

@@ -2,18 +2,24 @@
 
 #![deny(missing_docs)]
 
+mod adaptive;
+/// Verified source asset catalogue shared across independent scene runs.
+pub mod asset_catalog;
+mod distribution;
+mod presentation;
+
 /// Backend capability discovery and Blender execution.
 pub mod backends;
 /// Strict scene configuration.
 pub mod config;
 /// Durable staged scene controller.
 pub mod controller;
-/// Recovery classification and backoff.
-pub mod recovery;
+mod endpoint;
 /// Accountable multi-agent category-to-prompt expansion.
 pub mod prompt_planning;
+/// Recovery classification and backoff.
+pub mod recovery;
 mod reporting;
-mod endpoint;
 /// Persistent vector asset retrieval.
 pub mod retrieval;
 /// Scene-director and scoped role invocation.

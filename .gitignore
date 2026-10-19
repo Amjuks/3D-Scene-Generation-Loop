@@ -18,6 +18,7 @@ __pycache__/
 
 # Local scene-generation outputs and temporary validation artifacts
 /scene-runs/
+/scene-assets/
 /scene-production-*/batches/
 /scene-production-*/prompt-runs/
 /scene-production-*/prompt-library/

@@ -9,7 +9,7 @@ The pipeline uses Loop for model calls and Blender to build, render, and export
 Category counts → prompt planner + diversity critic ─┐
 One prompt per line / explicit scene tasks ──────────┤
                                                     ↓
-Preflight → scene layout → structure review → room furnishing
+Preflight → scene program → structure review → concurrent regional design
           → Blender components → assembly and previews
           → validation / bounded repair → accepted exports → dataset and gallery
 ```
@@ -28,21 +28,27 @@ alone does not prove that inference credentials work.
    and diversity critic. Local checks reject duplicates and malformed results;
    the critic compares concrete designs against prior concepts. Revisions retain
    feedback and checkpoints. An accepted prompt becomes a scene task.
-3. **Design the scene.**
-   [controller.rs](crates/loop-scene/src/controller.rs) asks `SceneDirector` for a
-   compact layout and `StructureDesigner` to review it. Deterministic code expands
-   recipe choices into scene nodes, resolves supports and bridges, and checks
-   dimensions and placement. Invalid layouts get bounded model repair calls.
-4. **Furnish rooms.** Each habitable room receives a `LayoutDesigner` call using
-   local room coordinates. The controller fits furniture and checks containment,
-   overlap, and circulation. Accepted room plans are cached; rooms within a scene
-   are currently designed sequentially.
+3. **Design the scene program.**
+   [adaptive.rs](crates/loop-scene/src/adaptive.rs) asks `SceneDirector` to derive
+   topology, region envelopes, scale/detail allocations, essential features and
+   inspection cameras from the request and source catalogue. `StructureDesigner`
+   independently reviews it. Regions are invisible work allocations, not rooms.
+4. **Design regional geometry.** Scoped designers run with bounded concurrency,
+   producing imported asset references or explicit meshes, extrusions, revolved
+   profiles, swept forms and terrain surfaces. Deterministic compilation checks
+   bounds, ownership, feature allocation and shared region connections. Regional
+   corrections and paid-work checkpoints are bounded and input-hashed. Missing
+   essential models remain explicit blockers instead of placeholder geometry.
 5. **Build and render.** The Rust Blender adapter starts headless Blender jobs.
-   Python recipes build individual components, then assemble them under parent
-   transforms and render exterior/interior previews. Assets are isolated per scene.
+   Component workers run within `max_blender_processes`. Exact repeated geometry
+   reuses promoted components; repeated source models share mesh data in assembly.
+   Original model materials and textures survive import. Generated components are
+   isolated per scene; the verified source catalogue can be shared across scenes.
+   Overview and authored regional cameras provide actual review images.
 6. **Validate and publish.** Geometry, render health, and export checks gate
    acceptance. Blender reopens the native file and reimports the GLB for parity
-   checks. Optional image review sends actual previews to a vision model.
+   checks. Realistic fidelity requires image review and excludes legacy proxy
+   recipes. Missing image coverage or requested additional views blocks acceptance.
    Repairable findings can trigger bounded repair/regeneration. Successful runs
    publish `final/`; the Python wrapper updates the gallery and `dataset.json`.
 
@@ -66,7 +72,8 @@ There are two execution paths sharing Loop's model/provider infrastructure:
 
 “Agents” in the scene flow means specialized model roles: prompt planning,
 independent diversity review, scene design, structure review, furnishing,
-optional visual review, and repair. They can all use the same configured model.
+visual review, and repair. Text roles can share a model; review requires a model
+registered for image input. Shared call/token reservations bound concurrent calls.
 `--workers` controls concurrent scene processes, not autonomous subagents.
 
 LLM/API calls occur in `roles.rs`: text calls produce or repair structured plans;
@@ -77,10 +84,14 @@ construction, local fitting, rendering, and numerical validation run locally.
 
 ## Other flows
 
-- With `models.compact_planning: false`, the controller uses recursive frontier
+- With `planning.mode: legacy` and `models.compact_planning: false`, the controller uses recursive frontier
   proposals: the scene director allocates nodes, then scoped design roles expand
   owned subtrees. This converges on the same scene specification, backend,
   validation, and export stages as compact planning.
+- With `planning.mode: legacy` and `models.compact_planning: true`, the original
+  recipe-layout, automatic-room and sequential furnishing path remains available.
+  Old individual-run snapshots without a planning key resume this legacy flow.
+  New configurations default to adaptive planning regardless of compact_planning.
 - `loop scene run --config CONFIG --tasks TASKS` accepts explicit task lists,
   bypassing category invention. See [examples/scenes.yaml](examples/scenes.yaml).
   `scene status`, `resume`, `inspect`, and `cancel` operate on individual runs.
@@ -108,6 +119,9 @@ construction, local fitting, rendering, and numerical validation run locally.
 | [validation.rs](crates/loop-scene/src/validation.rs), [recovery.rs](crates/loop-scene/src/recovery.rs) | Acceptance checks and failure/retry policy |
 | [storage.rs](crates/loop-scene/src/storage.rs), [reporting.rs](crates/loop-scene/src/reporting.rs) | SQLite state, promotion, timings and provider-reported usage |
 | [retrieval.rs](crates/loop-scene/src/retrieval.rs) | Scene-local asset indexing and compatible reuse |
+| [adaptive.rs](crates/loop-scene/src/adaptive.rs) | Scene programs, scoped concurrent design and checkpoints |
+| [asset_catalog.rs](crates/loop-scene/src/asset_catalog.rs), [scene_assets.py](scripts/scene_assets.py) | Verified source models, acquisition, variants and provenance |
+| [audit_scene_diversity.py](scripts/audit_scene_diversity.py) | Realized structural similarity reports |
 | [crates/loop-ai/src](crates/loop-ai/src) | Model registry, provider APIs and streaming |
 | [tests](tests) | Python wrapper/scheduler and Blender checks; Rust tests also live beside modules |
 

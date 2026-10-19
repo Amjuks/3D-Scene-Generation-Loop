@@ -19,6 +19,9 @@ pub struct SceneConfig {
     /// Soket models assigned to typed roles.
     #[serde(default)]
     pub models: ModelsConfig,
+    /// Scene program decomposition and spatial planning limits.
+    #[serde(default)]
+    pub planning: PlanningConfig,
     /// Local semantic embedding/index configuration.
     #[serde(default)]
     pub embedding: EmbeddingConfig,
@@ -48,6 +51,7 @@ impl Default for SceneConfig {
             version: 1,
             backend: BackendConfig::default(),
             models: ModelsConfig::default(),
+            planning: PlanningConfig::default(),
             embedding: EmbeddingConfig::default(),
             execution: ExecutionConfig::default(),
             budgets: BudgetConfig::default(),
@@ -192,6 +196,30 @@ fn model_tokens() -> u32 {
     8192
 }
 
+/// Request-driven decomposition; regions are work envelopes, not room templates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PlanningConfig {
+    /// `adaptive` for program/region specialists, `legacy` for saved recipe flows.
+    pub mode: String,
+    /// Maximum independent spatial work regions.
+    pub max_regions: usize,
+    /// Maximum authored objects per regional model response.
+    pub max_objects_per_region: usize,
+    /// Maximum world extent on any axis in metres.
+    pub max_extent_m: f64,
+}
+impl Default for PlanningConfig {
+    fn default() -> Self {
+        Self {
+            mode: "adaptive".into(),
+            max_regions: 24,
+            max_objects_per_region: 96,
+            max_extent_m: 100_000.0,
+        }
+    }
+}
+
 /// Local embedding backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -280,7 +308,7 @@ pub struct BudgetConfig {
     /// Maximum reported tokens over the whole run.
     #[serde(default = "total_tokens")]
     pub max_total_tokens: u64,
-    /// Maximum wall time.
+    /// Maximum active execution seconds across resumes (paused time excluded).
     #[serde(default = "wall_time")]
     pub max_wall_seconds: u64,
     /// Scene node circuit breaker.
@@ -351,6 +379,21 @@ fn backoff() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QualityConfig {
+    /// Keep original source meshes; optional derivatives require an explicit opt-out.
+    #[serde(default = "yes")]
+    pub preserve_source_detail: bool,
+    /// Require review warnings to be resolved before accepting an offline delivery.
+    #[serde(default)]
+    pub require_no_visual_warnings: bool,
+    /// Delivery settings saved in the native scene, independent of review previews.
+    #[serde(default = "final_resolution")]
+    pub final_resolution: [u32; 2],
+    /// Cycles samples saved for the final offline render; not rendered during review.
+    #[serde(default = "final_samples")]
+    pub final_samples: u32,
+    /// `concept` permits explicit proxy recipes; `realistic` requires asset fidelity and image review.
+    #[serde(default = "concept")]
+    pub fidelity: String,
     /// General absolute containment tolerance in meters.
     #[serde(default = "containment")]
     pub containment_tolerance_m: f64,
@@ -385,6 +428,11 @@ pub struct QualityConfig {
 impl Default for QualityConfig {
     fn default() -> Self {
         Self {
+            preserve_source_detail: true,
+            require_no_visual_warnings: false,
+            final_resolution: final_resolution(),
+            final_samples: final_samples(),
+            fidelity: concept(),
             containment_tolerance_m: containment(),
             relative_tolerance: relative(),
             connector_tolerance_m: connector(),
@@ -397,6 +445,15 @@ impl Default for QualityConfig {
             require_visual_review: true,
         }
     }
+}
+fn concept() -> String {
+    "concept".into()
+}
+fn final_resolution() -> [u32; 2] {
+    [3840, 2160]
+}
+fn final_samples() -> u32 {
+    512
 }
 fn containment() -> f64 {
     0.005
@@ -468,6 +525,9 @@ fn min_free() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AssetPolicy {
+    /// Curated immutable source-model catalogue, independent of run-local outputs.
+    #[serde(default)]
+    pub catalog: Option<PathBuf>,
     /// Enable reuse from accepted library entries.
     #[serde(default = "yes")]
     pub reuse: bool,
@@ -484,6 +544,7 @@ pub struct AssetPolicy {
 impl Default for AssetPolicy {
     fn default() -> Self {
         Self {
+            catalog: None,
             reuse: true,
             allow_downloads: false,
             max_download_bytes: download_bytes(),
@@ -525,7 +586,12 @@ impl SceneConfig {
     pub fn with_override(&self, value: &serde_yaml::Value, base: &Path) -> Result<Self> {
         let current =
             serde_yaml::to_value(self).map_err(|e| SceneError::Validation(e.to_string()))?;
-        let mut out: Self = serde_yaml::from_value(merge_yaml(current, value.clone()))
+        let merged = if value.is_null() {
+            current
+        } else {
+            merge_yaml(current, value.clone())
+        };
+        let mut out: Self = serde_yaml::from_value(merged)
             .map_err(|e| SceneError::Validation(format!("task override schema: {e}")))?;
         out.resolve_paths(base);
         out.validate()?;
@@ -533,6 +599,16 @@ impl SceneConfig {
     }
 
     fn resolve_paths(&mut self, base: &Path) {
+        // Resolve once to absolute paths. Reapplying a task overlay must not
+        // prepend its directory to already-resolved relative catalogue/output paths.
+        let absolute_base = if base.is_absolute() {
+            base.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(base)
+        };
+        let base = absolute_base.as_path();
         if self.storage.output_root.is_relative() {
             self.storage.output_root = base.join(&self.storage.output_root);
         }
@@ -547,6 +623,11 @@ impl SceneConfig {
         if let Some(path) = &self.embedding.command {
             if path.is_relative() {
                 self.embedding.command = Some(base.join(path));
+            }
+        }
+        if let Some(path) = &self.assets.catalog {
+            if path.is_relative() {
+                self.assets.catalog = Some(base.join(path));
             }
         }
     }
@@ -581,9 +662,29 @@ impl SceneConfig {
                 "concurrency must be at least one".into(),
             ));
         }
+        if !matches!(self.planning.mode.as_str(), "adaptive" | "legacy")
+            || self.planning.max_regions == 0
+            || self.planning.max_objects_per_region == 0
+            || !self.planning.max_extent_m.is_finite()
+            || self.planning.max_extent_m <= 0.0
+        {
+            return Err(SceneError::Validation(
+                "planning requires adaptive|legacy mode and positive finite limits".into(),
+            ));
+        }
+        if !matches!(self.quality.fidelity.as_str(), "concept" | "realistic") {
+            return Err(SceneError::Validation(
+                "quality.fidelity must be concept or realistic".into(),
+            ));
+        }
+        if self.quality.fidelity == "realistic" && !self.quality.require_visual_review {
+            return Err(SceneError::Validation("realistic fidelity requires actual-image visual review; use concept for geometry-only previews".into()));
+        }
         if self.budgets.max_nodes == 0
             || self.budgets.max_depth == 0
             || self.budgets.max_model_calls == 0
+            || self.budgets.max_total_tokens == 0
+            || self.budgets.max_wall_seconds == 0
         {
             return Err(SceneError::Validation("budgets must be positive".into()));
         }
@@ -593,9 +694,13 @@ impl SceneConfig {
         {
             return Err(SceneError::Validation("connector tolerance must be positive and no larger than containment tolerance (max 0.05m)".into()));
         }
-        if self.quality.preview_resolution.contains(&0) {
+        if self.quality.preview_resolution.contains(&0)
+            || self.quality.final_resolution.contains(&0)
+            || self.quality.preview_samples == 0
+            || self.quality.final_samples == 0
+        {
             return Err(SceneError::Validation(
-                "preview resolution must be positive".into(),
+                "preview and final render resolutions and samples must be positive".into(),
             ));
         }
         if self.embedding.dimensions < 64 || self.embedding.dimensions > 4096 {
@@ -645,5 +750,42 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.quality.preview_samples, 7);
         assert_eq!(cfg.quality.preview_resolution, [1280, 720]);
+    }
+    #[test]
+    fn adaptive_and_realistic_configuration_is_explicit_and_validated() {
+        let mut cfg = SceneConfig::default();
+        assert_eq!(cfg.planning.mode, "adaptive");
+        cfg.quality.fidelity = "realistic".into();
+        cfg.quality.require_visual_review = false;
+        assert!(cfg.validate().is_err());
+        cfg.quality.require_visual_review = true;
+        assert!(cfg.validate().is_ok());
+        cfg.planning.max_extent_m = f64::INFINITY;
+        assert!(cfg.validate().is_err());
+    }
+    #[test]
+    fn task_overlay_does_not_rebase_resolved_catalog_paths() {
+        let mut cfg = SceneConfig::default();
+        cfg.assets.catalog = Some("models/catalog.json".into());
+        cfg.resolve_paths(Path::new("examples/adaptive"));
+        let catalog = cfg.assets.catalog.clone();
+        assert!(catalog.as_ref().unwrap().is_absolute());
+        let overridden = cfg
+            .with_override(
+                &serde_yaml::from_str("quality: {preview_samples: 4}").unwrap(),
+                Path::new("tasks"),
+            )
+            .unwrap();
+        assert_eq!(overridden.assets.catalog, catalog);
+    }
+    #[test]
+    fn omitted_task_overrides_preserve_the_entire_configuration() {
+        let cfg = SceneConfig::default();
+        let result = cfg
+            .with_override(&serde_yaml::Value::Null, Path::new("."))
+            .unwrap();
+        assert_eq!(result.version, 1);
+        assert_eq!(result.planning.mode, "adaptive");
+        assert_eq!(result.models.default_model, cfg.models.default_model);
     }
 }

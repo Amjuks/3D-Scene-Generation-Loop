@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "pine-outcrop",
+      "seed": 41,
+      "prompt": "A small realistic outdoor pine regeneration site, approximately 12 by 9 metres. A naturally uneven low ridge, a group of young pine saplings growing beside a weathered rock outcrop, open ground between them, and an informal clear approach from the south. Use the available Poly Haven pine_sapling_small_a (single-tree variant) and rock_09 models with their original botanical geometry and PBR textures. The saplings are young trees, not giant mature pines. Shape terrain to meet the rocks and tree roots. Asymmetric planting, grounded contact, plausible scale. This is entirely open landscape; its defining features are vegetation morphology, geological texture and terrain relief. Provide a low eye-level view of the foliage and an overview showing the spatial composition. Keep the study small enough for close inspection. Use the available forest_ground_04 PBR surface material on the terrain with physically plausible metric tiling."
+    },
+    {
+      "id": "chair-exhibition",
+      "seed": 82,
+      "prompt": "An open-air museum installation about traditional Chinese joinery, approximately 8 by 7 metres. Exhibit the actual available Poly Haven chinese_armchair model with its original wood material and detailed curved members. Put the chair on a low circular exhibition dais, with a curved free-standing screen behind it and an asymmetric approach around one side. Author the dais by revolving a detailed radial profile and the screen by sweeping its narrow cross-section along a smooth arc. Give the chair an unobstructed front and side viewing route. The chair, rather than generic furniture or a rectangular room shell, is the collection. Preserve its source proportions; do not add a roof or a room. Include close views showing the joinery and a whole-installation view."
+    }
+  ]
+}

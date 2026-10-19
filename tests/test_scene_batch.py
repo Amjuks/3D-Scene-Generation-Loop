@@ -42,6 +42,32 @@ class BatchTests(unittest.TestCase):
             self.batch.lock.close()
         self.temp.cleanup()
 
+    def test_new_batch_quality_defaults_and_explicit_concept_opt_out(self):
+        quality = module.read_json(self.batch.path / 'config.json')['quality']
+        self.assertEqual(quality['fidelity'], 'realistic')
+        self.assertTrue(quality['require_visual_review'])
+        self.args.name = 'explicit-concept'
+        self.args.fidelity, self.args.visual_review = 'concept', False
+        quality = module.read_json(module.prepare(self.args) / 'config.json')['quality']
+        self.assertEqual(quality['fidelity'], 'concept')
+        self.assertFalse(quality['require_visual_review'])
+        self.args.name, self.args.fidelity = 'invalid-bypass', 'realistic'
+        with self.assertRaisesRegex(ValueError, 'requires --fidelity concept'):
+            module.prepare(self.args)
+        self.assertFalse((self.root / 'invalid-bypass').exists())
+
+    def test_custom_quality_config_and_resume_are_not_silently_upgraded(self):
+        self.args.name = 'custom-quality'
+        self.args.config = self.root / 'saved.json'
+        module.atomic_json(self.args.config, {'version': 1, 'quality': {'require_visual_review': False}})
+        path = module.prepare(self.args)
+        self.assertEqual(module.read_json(path / 'config.json')['quality'], {'require_visual_review': False})
+        self.args.resume, self.args.name, self.args.config, self.args.categories = path, None, None, None
+        self.assertEqual(module.prepare(self.args), path)
+        self.args.fidelity = 'realistic'
+        with self.assertRaisesRegex(ValueError, '--resume uses saved'):
+            module.prepare(self.args)
+
     def plan(self):
         def launch(key, command, log):
             request = module.read_json(Path(command[command.index('--request')+1]))

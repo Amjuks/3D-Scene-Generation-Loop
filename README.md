@@ -3,10 +3,20 @@
 This project generates 3D scenes using Loop for LLM planning and Blender for
 geometry, rendering, and export.
 
-It plans layouts and furnished rooms, exports `.blend` and `.glb` files, and
+It plans scene-specific regions and geometry, imports verified real models,
+exports `.blend` and `.glb` files, and
 supports resumable batches with previews, progress reports, and an accepted-scene
 dataset.
-Outputs are procedural concept scenes; inspect the previews for visual quality.
+New jobs use adaptive planning instead of a compulsory room/interior template.
+Realistic fidelity requires suitable assets and actual-image review; concept
+mode remains available. See [UPGRADE.md](UPGRADE.md) for requirements, asset
+preparation, architecture and limits, and [UPGRADE_CHECKLIST.md](UPGRADE_CHECKLIST.md)
+for implementation and test status.
+
+For full-detail offline delivery, use the [production workflow](examples/adaptive/PRODUCTION.md)
+and [offline profile](examples/adaptive/production-offline.json). Source meshes
+stay at original detail; review previews and saved final Cycles settings are
+separate. Missing assets and unresolved visual findings remain explicit.
 
 ## Setup
 
@@ -33,7 +43,9 @@ must exist in that catalog. The upstream Loop CLI (`target/debug/loop`) supports
 
 ## Configure and run
 
-Create `scene-config.json`. Replace the model ID if your endpoint uses another:
+Start with [examples/adaptive/config.json](examples/adaptive/config.json).
+Prepare its catalogue using [UPGRADE.md](UPGRADE.md) and configure registered
+text/image model IDs. A minimal concept configuration for experimentation is:
 
 ```json
 {
@@ -42,17 +54,18 @@ Create `scene-config.json`. Replace the model ID if your endpoint uses another:
     "provider": "soket",
     "default_model": "qwen3-8-27b",
     "fallback_models": [],
-    "compact_planning": true
+    "compact_planning": false
   },
+  "planning": {"mode": "adaptive"},
   "backend": {"preview_renderer": "cycles"},
-  "quality": {"require_visual_review": false}
+  "quality": {"fidelity": "concept", "require_visual_review": false}
 }
 ```
 
 This uses one model for all text roles. Numerical/export checks remain enabled.
 Model requests and retries can incur charges. Keep several GB of disk space free.
 
-### Optional visual validation
+### Realistic fidelity and visual validation
 
 To review rendered images with a vision model, add this `roles` object inside
 `models` in your configuration:
@@ -66,8 +79,9 @@ To review rendered images with a vision model, add this `roles` object inside
 }
 ```
 
-Set `quality.require_visual_review` to `true`. The reviewer model must be
-registered in Loop's model catalog with image-input support; setting
+Set `quality.fidelity` to `realistic` and `quality.require_visual_review` to `true`.
+The reviewer model must be registered in Loop's model catalog with
+`"input": ["text", "image"]` support; setting
 `requires_images` does not make a text-only model accept images. The default
 model continues to handle text planning.
 
@@ -101,7 +115,9 @@ python3 scene_batch.py categories.yaml --name my-scenes --config scene-config.js
 python3 scene_batch.py --resume scene-runs/my-scenes
 ```
 
-Use `--workers 2` for two concurrent scenes, `--dry-run` to prepare without model
+Use `--workers 2` for two concurrent scenes, `execution.max_agent_tasks` for
+regional model concurrency, `execution.max_blender_processes` for component
+concurrency, and `--dry-run` to prepare without model
 calls, or `--plan-only` to generate prompts only. Defaults allow eight attempts
 per scene/planning chunk and two fresh redesigns; limits persist across resumes.
 An existing batch name requires `--resume`.

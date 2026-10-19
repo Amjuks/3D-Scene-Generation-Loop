@@ -131,12 +131,22 @@ impl RunStore {
         let config_bytes = serde_json::to_vec(config).map_err(storage)?;
         let config_hash = hash_bytes(&config_bytes);
         self.conn.execute("INSERT OR IGNORE INTO run(id,task_id,state,prompt_hash,config_hash,created_at,updated_at) VALUES(?1,?2,'running',?3,?4,?5,?5)",params![run_id,task_id,prompt_hash,config_hash,now]).map_err(storage)?;
-        atomic_write(&self.root.join("input/prompt.txt"), prompt.as_bytes())?;
-        atomic_write(&self.root.join("input/resolved-config.json"), &config_bytes)?;
-        atomic_write(
-            &self.root.join("input/task.json"),
-            &serde_json::to_vec_pretty(task).map_err(storage)?,
-        )?;
+        // Runtime defaults and migration adapters can change between versions.
+        // They must not rewrite the original inputs (or invalidate a published
+        // manifest's config hash) merely because an existing run is resumed.
+        for (name, bytes) in [
+            ("prompt.txt", prompt.as_bytes().to_vec()),
+            ("resolved-config.json", config_bytes),
+            (
+                "task.json",
+                serde_json::to_vec_pretty(task).map_err(storage)?,
+            ),
+        ] {
+            let path = self.root.join("input").join(name);
+            if !path.exists() {
+                atomic_write(&path, &bytes)?;
+            }
+        }
         Ok(())
     }
     /// Current state and optional blocker.
@@ -504,6 +514,36 @@ fn parse_task_state(s: &str) -> SceneTaskState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resume_does_not_rewrite_immutable_input_snapshots() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RunStore::open(dir.path()).unwrap();
+        store
+            .initialize(
+                "run",
+                "task",
+                "original",
+                &serde_json::json!({"version":1}),
+                &serde_json::json!({"id":"task"}),
+            )
+            .unwrap();
+        let config_path = dir.path().join("input/resolved-config.json");
+        let original = std::fs::read(&config_path).unwrap();
+        store
+            .initialize(
+                "run",
+                "task",
+                "changed",
+                &serde_json::json!({"version":1,"planning":{"mode":"legacy"}}),
+                &serde_json::json!({"id":"changed"}),
+            )
+            .unwrap();
+        assert_eq!(std::fs::read(config_path).unwrap(), original);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("input/prompt.txt")).unwrap(),
+            "original"
+        );
+    }
     #[test]
     fn persistence_and_claim_are_idempotent() {
         let d = tempfile::tempdir().unwrap();

@@ -19,6 +19,7 @@ class GenerateScenesTests(unittest.TestCase):
         with patch.dict(sys.modules, {"scene_batch": SimpleNamespace(main=lambda args: (args, 7))}):
             for args in (["categories.yaml", "--name", "collection"],
                          ["--output", "/tmp/out", "categories.yml"],
+                         ["--fidelity", "concept", "categories.yaml", "--skip-visual-review"],
                          ["--resume", "/tmp/collection"]):
                 self.assertEqual(module.main(args), (args, 7))
 
@@ -96,7 +97,8 @@ class GenerateScenesTests(unittest.TestCase):
                                                "--dry-run"]), 0)
                 run.assert_not_called()
             config = next((root / "dry").glob("*/config.json"))
-            self.assertFalse(json.loads(config.read_text())["quality"]["require_visual_review"])
+            self.assertTrue(json.loads(config.read_text())["quality"]["require_visual_review"])
+            self.assertEqual(json.loads(config.read_text())["quality"]["fidelity"], "realistic")
             self.assertTrue(json.loads(config.read_text())["models"]["compact_planning"])
             with patch.object(module, "find_loop", return_value=Path("/fake/loop")), \
                     patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")), \
@@ -125,6 +127,28 @@ class GenerateScenesTests(unittest.TestCase):
             report = json.loads(next(root.glob("*/batch-report.json")).read_text())
             self.assertEqual(report["results"], [])
             self.assertIn("Preflight failed", report["blocker"])
+
+    def test_concept_mode_is_explicit_and_saved_config_is_preserved(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            prompts = root / 'prompts.txt'
+            prompts.write_text('A forest\n')
+            output = root / 'outputs'
+            self.assertEqual(module.main([str(prompts), '--output', str(output), '--dry-run', '--skip-visual-review']), 1)
+            self.assertFalse(output.exists())
+            self.assertEqual(module.main([str(prompts), '--output', str(output), '--dry-run', '--fidelity', 'concept', '--skip-visual-review']), 0)
+            config = json.loads(next(output.glob('*/config.json')).read_text())
+            self.assertEqual(config['quality']['fidelity'], 'concept')
+            self.assertFalse(config['quality']['require_visual_review'])
+            saved = root / 'saved.json'
+            saved.write_text(json.dumps(config))
+            self.assertEqual(module.main([str(prompts), '--output', str(root / 'custom'), '--config', str(saved), '--dry-run']), 0)
+            task = json.loads(next((root / 'custom').glob('*/tasks.json')).read_text())['tasks'][0]
+            self.assertNotIn('quality', task['overrides'])
+            self.assertEqual(json.loads(saved.read_text()), config)
+            self.assertEqual(module.main([str(prompts), '--output', str(root / 'upgraded'), '--config', str(saved), '--fidelity', 'realistic', '--dry-run']), 0)
+            task = json.loads(next((root / 'upgraded').glob('*/tasks.json')).read_text())['tasks'][0]
+            self.assertEqual(task['overrides']['quality'], {'fidelity': 'realistic', 'require_visual_review': True})
 
 
 if __name__ == "__main__":

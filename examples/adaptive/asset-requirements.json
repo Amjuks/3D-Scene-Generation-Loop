@@ -1,0 +1,37 @@
+{
+  "requirements": [
+    {
+      "id": "joinery-chair",
+      "name": "Chinese hardwood armchair",
+      "category": "museum collection furniture",
+      "reason": "The exhibit requires actual carved joinery and curved-back geometry.",
+      "query": "Chinese armchair",
+      "asset_type": "models",
+      "identity_terms": ["Chinese", "armchair"],
+      "exclude_terms": ["damaged"],
+      "quality": "production"
+    },
+    {
+      "id": "landscape-ground",
+      "name": "Forest ground with litter and soil",
+      "category": "surface material",
+      "reason": "Terrain needs a real scanned surface rather than a uniform green shader.",
+      "query": "forest ground",
+      "asset_type": "textures",
+      "identity_terms": ["forest", "ground"],
+      "surface_use": "terrain",
+      "quality": "production"
+    },
+    {
+      "id": "gothic-altar",
+      "name": "Gothic carved oak altar",
+      "category": "religious furnishing",
+      "reason": "Specific carved forms and proportions cannot be replaced with a generic table.",
+      "query": "gothic carved oak altar",
+      "asset_type": "models",
+      "identity_terms": ["altar"],
+      "must_terms": ["gothic", "oak"],
+      "quality": "production"
+    }
+  ]
+}

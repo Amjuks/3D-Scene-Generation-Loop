@@ -3,6 +3,7 @@
 use crate::config::{ModelsConfig, RoleModelConfig};
 use crate::spec::{SceneNode, SceneSpec};
 use crate::{Result, SceneError};
+use futures::StreamExt;
 use loop_ai::{
     AssistantContent, Context, ImageContent, Message, Models, SimpleStreamOptions, ThinkingLevel,
     UserContent, UserMessage, UserMessageContent,
@@ -10,8 +11,7 @@ use loop_ai::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
-use futures::StreamExt;
+use std::sync::{Arc, Mutex};
 
 /// Stable typed role IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -48,7 +48,7 @@ impl Role {
             Self::LayoutDesigner => "layout_designer",
             Self::AssetSpecialist => "asset_specialist",
             Self::MaterialLighting => "material_lighting",
-            Self::VisualReviewer => "reviewer",
+            Self::VisualReviewer => "visual_reviewer",
             Self::RepairPlanner => "repair_planner",
         }
     }
@@ -76,12 +76,12 @@ pub fn role_registry() -> BTreeMap<Role, RoleDefinition> {
     (PromptPlanner,RoleDefinition{prompt_version:"prompt-planner-v2",system:"Invent highly distinct buildable 3D scene concepts. Vary spatial topology, terrain, silhouette, circulation, material language, function, scale and atmosphere rather than merely changing colors or labels. Embrace asymmetry, organic growth, unexpected negative space, fragmented masses and irregular relationships when appropriate. Describe detailed occupied spaces, coherent construction and camera-readable landmarks. Respect the category while challenging its default template. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"category, reproducible creative brief and prior concept ledger"}),
     (DiversityCritic,RoleDefinition{prompt_version:"diversity-critic-v2",system:"Independently inspect proposed scene prompts against the prior concept ledger. Reject cosmetic variants of a specific scene, empty-room instructions, vague concepts and contradictory spatial requirements. Judge concrete geometry, silhouette and functional program together. A shared broad layout family, setting, material or circulation label is not itself a duplicate. Do not pool similarities to different prior scenes into a rejection. For duplicates identify one matching scene and the concrete repeated arrangement in both. Replacement directions must remain buildable and respect the category and user constraints. Return explicit indexed replacement feedback in JSON; do not invent approval for missing candidates.",requires_images:false,permitted_tools:&[],context_policy:"candidate concepts, previous concepts and diversity rubric"}),
     (SceneDirector,RoleDefinition{prompt_version:"scene-director-v1",system:"Interpret the complete prompt across any scale. Establish dimensions, hierarchy, major relations, required interiors, style, lighting, construction realism, views, and explicit reasonable assumptions. Allocate immediate children before they are detailed. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"original requirements plus fixed global constraints"}),
-    (DesignCoordinator,RoleDefinition{prompt_version:"design-coordinator-v1",system:"Design only the supplied subtree. Preserve its accepted parent envelope and interfaces. Allocate immediate child envelopes/exclusions/interfaces before child detail. Stop at meaningful leaves that a named deterministic recipe can generate unambiguously. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"node revision, inherited hard constraints, neighbor interfaces, findings, dependency hashes"}),
-    (StructureDesigner,RoleDefinition{prompt_version:"structure-v1",system:"Design envelope, slabs, shared boundaries with single ownership, openings, stairs, supports and construction interfaces using explicit metric dimensions. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"structural subtree and adjacent boundary interfaces"}),
+    (DesignCoordinator,RoleDefinition{prompt_version:"design-coordinator-v2",system:"Design only the supplied region or subtree. Preserve its metric allocation, interfaces and required features. Follow the exact requested output schema: when RegionPlan is requested, return description, objects and unresolved_assets; do not substitute children/envelopes. Use verified assets and supported declarative geometry for specific morphology. Do not add default rooms or generic furnishings. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"node revision, inherited hard constraints, neighbor interfaces, findings, dependency hashes"}),
+    (StructureDesigner,RoleDefinition{prompt_version:"structure-v2",system:"Design or independently review the supplied spatial program, site geometry, support, access, scale and shared boundaries. For a review request, return the requested review verdict schema; for a design request, return its design schema. The explicit output contract controls all fields. Never invent an envelope/slabs schema or add buildings to landscapes. Use metric dimensions. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"structural subtree and adjacent boundary interfaces"}),
     (LayoutDesigner,RoleDefinition{prompt_version:"layout-v1",system:"Allocate usable spaces, circulation, door swings, furniture envelopes, adjacency, exclusion and accessibility regions with measured coordinates. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"space bounds, openings, circulation and requested contents"}),
     (AssetSpecialist,RoleDefinition{prompt_version:"asset-v1",system:"Specify/retrieve furniture, fixtures, vegetation and props as meaningful assemblies with construction contacts, explicit fronts, bounds, connectors and supported adaptations. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"leaf/subtree envelope, style/material references and retrieval candidates"}),
     (MaterialLighting,RoleDefinition{prompt_version:"material-light-v1",system:"Specify coherent PBR values, physical texture scales, photographic lighting and portable glTF-compatible material intent. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"scene palette, relevant geometry and camera plan"}),
-    (VisualReviewer,RoleDefinition{prompt_version:"visual-review-v1",system:"Review the supplied actual rendered images against requirements. Return structured node-linked findings; never infer that unseen views passed. Return JSON only.",requires_images:true,permitted_tools:&[],context_policy:"requirements, node/camera IDs and bounded actual images"}),
+    (VisualReviewer,RoleDefinition{prompt_version:"visual-review-v3-source-evidence",system:"Review actual rendered images against the original scene prompt, domain-specific features and declared fidelity. Check topology and scale, recognizable silhouettes, realistic species/object morphology, construction and support, material texture, intended interiors and scene-specific content. Reject generic rectangles or crude primitive proxies masquerading as realistic trees, sculpture, furniture or buildings; prose labels and feature declarations are not evidence. Judge the requested visual style rather than imposing photorealism on explicit voxel or stylized work. Return structured node-linked findings with camera-visible evidence. Source material IDs and environment are configured evidence, not proof of successful appearance. If texture is washed out, report insufficient visible detail or exposure, not an absent shader based only on color. A physical sky has a dark lower hemisphere without ground; do not claim it is missing from a gradient alone. Distinguish camera occlusion from absent geometry. Mark coverage insufficient for unseen required regions or hidden interiors. Never infer that unseen views passed. Return JSON only.",requires_images:true,permitted_tools:&[],context_policy:"requirements, node/camera IDs and bounded actual images"}),
     (RepairPlanner,RoleDefinition{prompt_version:"repair-v1",system:"Given measured failures and prior fingerprints, propose the lowest-owned minimal repair, changing strategy after repeated identical failures. Never weaken hard tolerances. Return JSON only.",requires_images:false,permitted_tools:&[],context_policy:"affected nodes, exact evidence, prior repairs and parent interfaces"}),
 ])
 }
@@ -158,29 +158,186 @@ pub struct RoleResponse<T> {
     pub prompt_version: String,
 }
 
+// Request-bound raw responses survive schema failures. Only the matching
+// adaptive checkpoint may replay them; unbound historical logs are diagnostics.
+#[derive(Serialize, Deserialize)]
+struct RawAttempt {
+    text: String,
+    tokens: u64,
+    model: String,
+}
+#[derive(Serialize, Deserialize)]
+struct RawCheckpoint {
+    input_hash: String,
+    prompt_version: String,
+    attempts: Vec<RawAttempt>,
+}
+fn save_raw_checkpoint(path: Option<(&Path, &str)>, value: &RawCheckpoint) -> Result<()> {
+    if let Some((path, _)) = path {
+        crate::storage::atomic_write(path, &serde_json::to_vec_pretty(value)
+            .map_err(|e| SceneError::Storage(e.to_string()))?)?;
+    }
+    Ok(())
+}
+
 /// Direct scene role invoker backed by Loop's existing Models/Soket auth path.
 pub struct RoleInvoker {
     models: Arc<Models>,
     config: ModelsConfig,
     reporter: Option<crate::reporting::Reporter>,
     budget: Option<crate::config::BudgetConfig>,
+    budget_state: Arc<Mutex<ModelBudgetState>>,
+    budget_changed: Arc<tokio::sync::Notify>,
+}
+#[derive(Default)]
+struct ModelBudgetState {
+    initialized: bool,
+    calls: u64,
+    spent: u64,
+    reserved: u64,
+}
+struct ModelReservation {
+    state: Arc<Mutex<ModelBudgetState>>,
+    changed: Arc<tokio::sync::Notify>,
+    tokens: u64,
+}
+impl ModelReservation {
+    fn record(&self, tokens: u64) {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).spent += tokens;
+    }
+}
+impl Drop for ModelReservation {
+    fn drop(&mut self) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.reserved = state.reserved.saturating_sub(self.tokens);
+        drop(state);
+        self.changed.notify_waiters();
+    }
+}
+fn image_token_reservation(image: &ImageContent) -> u64 {
+    if image.mime_type == "image/png" {
+        let prefix = image.data.get(..64).unwrap_or(&image.data);
+        if let Ok(bytes) =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, prefix)
+        {
+            if bytes.len() >= 24 && bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap()) as u64;
+                let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap()) as u64;
+                if width > 0 && height > 0 {
+                    // Conservative patch allowance, not a provider price/token
+                    // promise. Reconcile against actual usage after completion.
+                    return 1024u64.saturating_add(
+                        width
+                            .div_ceil(16)
+                            .saturating_mul(height.div_ceil(16))
+                            .saturating_mul(4),
+                    );
+                }
+            }
+        }
+    }
+    16_384
 }
 impl RoleInvoker {
     /// Construct a role invoker.
     pub fn new(models: Arc<Models>, config: ModelsConfig) -> Self {
-        Self { models, config, reporter: None, budget: None }
+        Self {
+            models,
+            config,
+            reporter: None,
+            budget: None,
+            budget_state: Arc::new(Mutex::new(ModelBudgetState::default())),
+            budget_changed: Arc::new(tokio::sync::Notify::new()),
+        }
     }
     pub(crate) fn with_reporter(mut self, reporter: crate::reporting::Reporter) -> Self {
-        self.reporter=Some(reporter);self
+        self.reporter = Some(reporter);
+        self
     }
     pub(crate) fn with_budget(mut self, budget: crate::config::BudgetConfig) -> Self {
         self.budget = Some(budget);
         self
     }
+    async fn reserve_call(
+        &self,
+        role: Role,
+        messages: &[Message],
+    ) -> Result<Option<ModelReservation>> {
+        let Some(budget) = &self.budget else {
+            return Ok(None);
+        };
+        // UTF-8 byte counts conservatively cover text input tokens without
+        // depending on a provider tokenizer. Images reserve a bounded allowance;
+        // actual provider usage remains authoritative after the request finishes.
+        let input = messages
+            .iter()
+            .map(|message| match message {
+                Message::User(user) => match &user.content {
+                    UserMessageContent::Text(text) => text.len() as u64,
+                    UserMessageContent::Blocks(blocks) => blocks
+                        .iter()
+                        .map(|block| match block {
+                            UserContent::Text(text) => text.text.len() as u64,
+                            UserContent::Image(image) => image_token_reservation(image),
+                        })
+                        .sum(),
+                },
+                _ => serde_json::to_vec(message)
+                    .map(|b| b.len() as u64)
+                    .unwrap_or(0),
+            })
+            .sum::<u64>()
+            + role_registry()[&role].system.len() as u64
+            + 1024;
+        let reserve = input.saturating_add(u64::from(self.role_config(role).max_tokens));
+        loop {
+            let changed = self.budget_changed.notified();
+            {
+                let mut state = self.budget_state.lock().unwrap_or_else(|e| e.into_inner());
+                if !state.initialized {
+                    if let Some(reporter) = &self.reporter {
+                        let (calls, tokens) = reporter.model_usage()?;
+                        state.calls = calls;
+                        state.spent = tokens;
+                    }
+                    state.initialized = true;
+                }
+                if state.calls >= u64::from(budget.max_model_calls)
+                    || state.spent.saturating_add(reserve) > budget.max_total_tokens
+                {
+                    return Err(SceneError::WaitingExternal(format!("model budget cannot admit {}: {} calls, {} spent tokens, {} reserved, {} needed; saved plans retained",role.key(),state.calls,state.spent,state.reserved,reserve)));
+                }
+                if state
+                    .spent
+                    .saturating_add(state.reserved)
+                    .saturating_add(reserve)
+                    <= budget.max_total_tokens
+                {
+                    state.calls += 1;
+                    state.reserved += reserve;
+                    return Ok(Some(ModelReservation {
+                        state: Arc::clone(&self.budget_state),
+                        changed: Arc::clone(&self.budget_changed),
+                        tokens: reserve,
+                    }));
+                }
+            }
+            // Reserved capacity is released when a running call returns. Waiting
+            // here shrinks concurrency near budget limits without discarding work.
+            changed.await;
+        }
+    }
     fn role_config(&self, role: Role) -> RoleModelConfig {
         self.config
             .roles
             .get(role.key())
+            .or_else(|| {
+                if role == Role::VisualReviewer {
+                    self.config.roles.get("reviewer")
+                } else {
+                    None
+                }
+            })
             .cloned()
             .unwrap_or(RoleModelConfig {
                 model: self.config.default_model.clone(),
@@ -222,11 +379,45 @@ impl RoleInvoker {
         role: Role,
         payload: &serde_json::Value,
     ) -> Result<RoleResponse<T>> {
+        self.invoke_json_checkpointed(role, payload, None).await
+    }
+    pub(crate) async fn invoke_json_checkpointed<T: DeserializeOwned>(
+        &self,
+        role: Role,
+        payload: &serde_json::Value,
+        raw_path: Option<(&Path, &str)>,
+    ) -> Result<RoleResponse<T>> {
         let def = &role_registry()[&role];
+        if let Some((path, input_hash)) = raw_path {
+            if let Ok(bytes) = std::fs::read(path) {
+                if let Ok(saved) = serde_json::from_slice::<RawCheckpoint>(&bytes) {
+                    if saved.input_hash == input_hash && saved.prompt_version == def.prompt_version {
+                        for attempt in saved.attempts.iter().rev() {
+                            if let Ok(output) = parse_json::<T>(&attempt.text) {
+                                eprintln!("Scene role {}: recovered request-matched paid response without a new model call", role.key());
+                                return Ok(RoleResponse { output,
+                                    tokens: saved.attempts.iter().map(|a| a.tokens).sum(),
+                                    model: attempt.model.clone(), prompt_version: saved.prompt_version });
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let prompt=format!("ROLE OUTPUT CONTRACT: Return one JSON value matching the requested fields exactly; no Markdown fence and no commentary. All positions are meters in RH +X east/+Y north/+Z up. Quaternion order is [x,y,z,w]. Do not use non-identity scale.\n\nRelevant scoped context:\n{}",serde_json::to_string_pretty(payload).map_err(|e|SceneError::Model(e.to_string()))?);
-        let prompt=format!("{prompt}\nIMPORTANT: rotation_xyzw fields use quaternion [x,y,z,w]. Compact object rotation fields instead use THREE Euler angles [X,Y,Z] in DEGREES; use [0,0,0] for no rotation. Follow the exact requested schema, including description. JSON numbers must be computed numeric literals: no arithmetic expressions, comments, units or ellipses in JSON. Return exactly one object.");
-        let first = self.call(role, vec![Message::user_text(prompt.clone())]).await?;
-        if let Some(r)=&self.reporter {r.save_response(role.key(),&first.0)?;}
+        let prompt=format!("{prompt}\nIMPORTANT: rotation_xyzw fields use quaternion [x,y,z,w]. Compact object rotation fields instead use THREE Euler angles [X,Y,Z] in DEGREES; use [0,0,0] for no rotation. Follow ONLY the exact requested output schema. Do not add fields such as description or envelope unless that output schema requests them. JSON numbers must be computed numeric literals: no arithmetic expressions, comments, units or ellipses in JSON. Return exactly one object.");
+        let first = self
+            .call(role, vec![Message::user_text(prompt.clone())])
+            .await?;
+        if let Some(r) = &self.reporter {
+            r.save_response(role.key(), &first.0)?;
+        }
+        let mut raw = RawCheckpoint {
+            input_hash: raw_path.map_or("", |(_, hash)| hash).into(),
+            prompt_version: def.prompt_version.into(),
+            attempts: vec![RawAttempt { text: first.0.clone(), tokens: first.1, model: first.2.clone() }],
+        };
+        save_raw_checkpoint(raw_path, &raw)?;
         match parse_json::<T>(&first.0) {
             Ok(output) => Ok(RoleResponse {
                 output,
@@ -235,12 +426,20 @@ impl RoleInvoker {
                 prompt_version: def.prompt_version.into(),
             }),
             Err(error) => {
-                eprintln!("Scene role {}: correcting JSON schema: {}",role.key(),error);
+                eprintln!(
+                    "Scene role {}: correcting JSON schema: {}",
+                    role.key(),
+                    error
+                );
                 let correction=format!("Your previous output failed local validation: {error}. Return a complete corrected JSON value only. Do not discuss the error.\nOriginal required contract:\n{prompt}\nPrevious output:\n{}",truncate(&first.0,24000));
                 let second = self
                     .call(role, vec![Message::user_text(correction)])
                     .await?;
-                if let Some(r)=&self.reporter {r.save_response(role.key(),&second.0)?;}
+                if let Some(r) = &self.reporter {
+                    r.save_response(role.key(), &second.0)?;
+                }
+                raw.attempts.push(RawAttempt { text: second.0.clone(), tokens: second.1, model: second.2.clone() });
+                save_raw_checkpoint(raw_path, &raw)?;
                 let output = parse_json(&second.0).map_err(|e| {
                     SceneError::Model(format!("{} output remained invalid: {e}", role.key()))
                 })?;
@@ -259,7 +458,17 @@ impl RoleInvoker {
         spec: &SceneSpec,
         images: &[(&str, &Path)],
     ) -> Result<RoleResponse<VisualReview>> {
-        let mut blocks=vec![UserContent::Text(loop_ai::TextContent{text:format!("Review these actual camera renders. Return JSON {{\"findings\":[{{\"severity\":...,\"affected_ids\":[...],\"evidence\":...,\"confidence\":0..1,\"suggested_correction\":...,\"needs_another_view\":false}}],\"coverage_sufficient\":bool,\"summary\":string}}. Requirements and nodes: {}",serde_json::to_string(spec).map_err(|e|SceneError::Model(e.to_string()))?),text_signature:None})];
+        // Image review needs semantic intent and placements, not hundreds of
+        // thousands of mesh coordinates or absolute source filesystem paths.
+        let context = serde_json::json!({"prompt":spec.prompt_summary,"coordinate_system":spec.coordinate_system,
+            "nodes":spec.nodes.iter().map(|n|serde_json::json!({"id":n.node_id,"parent":n.parent_id,
+                "kind":n.kind,"purpose":n.purpose,"design":n.design,"required_features":n.required_features,
+                "bounds":n.bounds_local,"transform":n.transform,"recipe":n.generation.recipe,
+                "asset_id":n.generation.parameters.get("asset_id"),"materials":n.materials,
+                "source_material":{"id":n.generation.parameters.get("material_asset_id"),"usage":n.generation.parameters.get("material_usage"),"texture_scale_m":n.generation.parameters.get("texture_scale_m"),"note":"A source material replaces procedural base color; assess actual source appearance, not the unused fallback color."},
+                "environment":n.generation.parameters.get("environment"),
+                "review_cameras":n.generation.parameters.get("review_cameras")})).collect::<Vec<_>>()});
+        let mut blocks=vec![UserContent::Text(loop_ai::TextContent{text:format!("Review these actual camera renders. Return JSON {{\"findings\":[{{\"severity\":\"warning | error | blocker\",\"affected_ids\":[...],\"evidence\":...,\"confidence\":0..1,\"suggested_correction\":...,\"needs_another_view\":false}}],\"coverage_sufficient\":bool,\"summary\":string}}. Requirements and nodes: {context}"),text_signature:None})];
         for (label, path) in images {
             let data = std::fs::read(path)
                 .map_err(|e| SceneError::Model(format!("read render {}: {e}", path.display())))?;
@@ -281,6 +490,9 @@ impl RoleInvoker {
                 })],
             )
             .await?;
+        if let Some(reporter) = &self.reporter {
+            reporter.save_response(Role::VisualReviewer.key(), &text)?;
+        }
         let output = parse_json(&text)
             .map_err(|e| SceneError::Model(format!("visual review schema: {e}")))?;
         Ok(RoleResponse {
@@ -297,8 +509,14 @@ impl RoleInvoker {
         let primary = self.role_config(role).model;
         let mut candidates = vec![primary.clone()];
         for model in &self.config.fallback_models {
-            if candidates.contains(model) { continue; }
-            if self.models.get_model(&self.config.provider, model).is_some() {
+            if candidates.contains(model) {
+                continue;
+            }
+            if self
+                .models
+                .get_model(&self.config.provider, model)
+                .is_some()
+            {
                 candidates.push(model.clone());
             } else {
                 eprintln!("Scene role {}: skipping fallback absent from registered model catalog: {model}", role.key());
@@ -313,23 +531,48 @@ impl RoleInvoker {
             let mut config = self.role_config(role);
             config.model = candidates[((attempt - 1) as usize).min(candidates.len() - 1)].clone();
             invocation.config.roles.insert(role.key().into(), config);
-            eprintln!("Scene role {}: model {}, attempt {attempt}/3", role.key(), invocation.role_config(role).model);
+            let reservation = self.reserve_call(role, &messages).await?;
+            eprintln!(
+                "Scene role {}: model {}, attempt {attempt}/3",
+                role.key(),
+                invocation.role_config(role).model
+            );
             let span=self.reporter.as_ref().map(|r|r.begin("model",role.key(),serde_json::json!({"model":invocation.role_config(role).model,"provider":self.config.provider,"attempt":attempt,"tokens":null}))).transpose()?;
             let mut usage = serde_json::json!({});
-            let result=invocation.call_once(role, messages.clone(), &mut usage).await;
-            if let Some(span)=span {
-                let (status,mut details)=match &result {
-                    Ok((_,tokens,model))=>("completed",serde_json::json!({"tokens":tokens,"model":model})),
-                    Err(e)=>("failed",serde_json::json!({"error":e.to_string()})),
-                };
-                details.as_object_mut().unwrap().extend(usage.as_object().unwrap().clone());
-                span.finish(status,details)?;
+            let result = invocation
+                .call_once(role, messages.clone(), &mut usage)
+                .await;
+            if let Some(reservation) = &reservation {
+                reservation.record(
+                    usage["tokens"]
+                        .as_u64()
+                        .unwrap_or_else(|| result.as_ref().ok().map(|r| r.1).unwrap_or(0)),
+                );
             }
+            if let Some(span) = span {
+                let (status, mut details) = match &result {
+                    Ok((_, tokens, model)) => (
+                        "completed",
+                        serde_json::json!({"tokens":tokens,"model":model}),
+                    ),
+                    Err(e) => ("failed", serde_json::json!({"error":e.to_string()})),
+                };
+                details
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(usage.as_object().unwrap().clone());
+                span.finish(status, details)?;
+            }
+            drop(reservation);
             match result {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     let transient = retryable_model_error(&error);
-                    if !transient || attempt == 3 || (error.to_string().contains("stop=Length") && attempt as usize >= candidates.len()) {
+                    if !transient
+                        || attempt == 3
+                        || (error.to_string().contains("stop=Length")
+                            && attempt as usize >= candidates.len())
+                    {
                         return Err(SceneError::Model(format!(
                             "role {} failed after {attempt} attempt(s): {error}",
                             role.key()
@@ -348,7 +591,12 @@ impl RoleInvoker {
         unreachable!("bounded retry loop returns on its final attempt")
     }
 
-    async fn call_once(&self, role: Role, messages: Vec<Message>, usage: &mut serde_json::Value) -> Result<(String, u64, String)> {
+    async fn call_once(
+        &self,
+        role: Role,
+        messages: Vec<Message>,
+        usage: &mut serde_json::Value,
+    ) -> Result<(String, u64, String)> {
         let (model, cfg) = self.resolve(role)?;
         let def = &role_registry()[&role];
         let context = Context {
@@ -381,16 +629,30 @@ impl RoleInvoker {
         let mut thinking_bytes = 0;
         while let Some(event) = stream.next().await {
             match &event {
-                loop_ai::AssistantMessageEvent::TextDelta { delta, .. } => text_bytes += delta.len(),
-                loop_ai::AssistantMessageEvent::ThinkingDelta { delta, .. } => thinking_bytes += delta.len(),
+                loop_ai::AssistantMessageEvent::TextDelta { delta, .. } => {
+                    text_bytes += delta.len()
+                }
+                loop_ai::AssistantMessageEvent::ThinkingDelta { delta, .. } => {
+                    thinking_bytes += delta.len()
+                }
                 _ => (),
             }
             if last_log.elapsed().as_secs() >= 20 || event.is_terminal() {
-                eprintln!("Scene role {}: {}s elapsed, {} text bytes, {} reasoning bytes", role.key(), started.elapsed().as_secs(), text_bytes, thinking_bytes);
+                eprintln!(
+                    "Scene role {}: {}s elapsed, {} text bytes, {} reasoning bytes",
+                    role.key(),
+                    started.elapsed().as_secs(),
+                    text_bytes,
+                    thinking_bytes
+                );
                 last_log = std::time::Instant::now();
-                if let Some(r)=&self.reporter {r.refresh()?;}
+                if let Some(r) = &self.reporter {
+                    r.refresh()?;
+                }
             }
-            if event.is_terminal() { break; }
+            if event.is_terminal() {
+                break;
+            }
         }
         let msg = stream.result().await;
         if msg.usage.total_tokens > 0 {
@@ -421,9 +683,14 @@ impl RoleInvoker {
 
 // Soket can expose a Qwen chat template through an OpenAI-compatible proxy.
 // None means "server default", not off; thinking-only models cannot disable it.
-fn disable_qwen_thinking(payload: &serde_json::Value, model: &loop_ai::Model) -> Option<serde_json::Value> {
+fn disable_qwen_thinking(
+    payload: &serde_json::Value,
+    model: &loop_ai::Model,
+) -> Option<serde_json::Value> {
     let id = model.id.to_ascii_lowercase();
-    if !id.starts_with("qwen3") || id.contains("thinking") { return None; }
+    if !id.starts_with("qwen3") || id.contains("thinking") {
+        return None;
+    }
     let mut payload = payload.clone();
     payload["chat_template_kwargs"]["enable_thinking"] = serde_json::json!(false);
     Some(payload)
@@ -460,6 +727,95 @@ fn retryable_model_error(error: &SceneError) -> bool {
 #[cfg(test)]
 mod retry_tests {
     use super::*;
+    #[test]
+    fn image_budget_scales_with_resolution_and_handles_unknown_formats() {
+        let make = |width: u32, height: u32| {
+            let mut bytes = vec![0u8; 48];
+            bytes[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+            bytes[16..20].copy_from_slice(&width.to_be_bytes());
+            bytes[20..24].copy_from_slice(&height.to_be_bytes());
+            ImageContent {
+                data: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
+                mime_type: "image/png".into(),
+            }
+        };
+        assert_eq!(image_token_reservation(&make(640, 480)), 5824);
+        assert!(
+            image_token_reservation(&make(3840, 2160)) > image_token_reservation(&make(640, 480))
+        );
+        assert_eq!(image_token_reservation(&make(0, 0)), 16384);
+        assert_eq!(
+            image_token_reservation(&ImageContent {
+                data: "invalid".into(),
+                mime_type: "image/jpeg".into()
+            }),
+            16384
+        );
+    }
+    #[test]
+    fn visual_reviewer_accepts_documented_key_and_legacy_alias() {
+        let models = Arc::new(Models::create(loop_ai::CreateModelsOptions::default()));
+        let mut config = ModelsConfig::default();
+        let setting: RoleModelConfig =
+            serde_json::from_value(serde_json::json!({"model":"vision"})).unwrap();
+        config.roles.insert("reviewer".into(), setting.clone());
+        assert_eq!(
+            RoleInvoker::new(models.clone(), config.clone())
+                .role_config(Role::VisualReviewer)
+                .model,
+            "vision"
+        );
+        config.roles.insert(
+            "visual_reviewer".into(),
+            RoleModelConfig {
+                model: "new-vision".into(),
+                ..setting
+            },
+        );
+        assert_eq!(
+            RoleInvoker::new(models, config)
+                .role_config(Role::VisualReviewer)
+                .model,
+            "new-vision"
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_call_reservations_wait_for_tokens_and_enforce_call_limit() {
+        let mut budget = crate::config::BudgetConfig::default();
+        budget.max_model_calls = 2;
+        let mut invoker =
+            RoleInvoker::new(Arc::new(Models::new()), ModelsConfig::default()).with_budget(budget);
+        let messages = vec![Message::user_text("small scene")];
+        let first = invoker
+            .reserve_call(Role::SceneDirector, &messages)
+            .await
+            .unwrap()
+            .unwrap();
+        invoker.budget.as_mut().unwrap().max_total_tokens = first.tokens + 10;
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            invoker.reserve_call(Role::SceneDirector, &messages)
+        )
+        .await
+        .is_err());
+        first.record(5);
+        drop(first);
+        let second = invoker
+            .reserve_call(Role::SceneDirector, &messages)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            invoker.reserve_call(Role::SceneDirector, &messages).await,
+            Err(SceneError::WaitingExternal(_))
+        ));
+        drop(second);
+        let state = invoker.budget_state.lock().unwrap();
+        assert_eq!(state.calls, 2);
+        assert_eq!(state.spent, 5);
+        assert_eq!(state.reserved, 0);
+    }
 
     #[tokio::test]
     async fn missing_fallback_is_skipped_and_failed_length_usage_is_retained() {
@@ -476,22 +832,32 @@ mod retry_tests {
         message.stop_reason = loop_ai::StopReason::Length;
         message.usage.output = 8192;
         message.usage.total_tokens = 8200;
-        script.push(FauxResponse::Events(vec![loop_ai::AssistantMessageEvent::Done {
-            reason: loop_ai::StopReason::Length, message,
-        }]));
+        script.push(FauxResponse::Events(vec![
+            loop_ai::AssistantMessageEvent::Done {
+                reason: loop_ai::StopReason::Length,
+                message,
+            },
+        ]));
         script.push(FauxResponse::Text("{\"ok\":true}".into()));
         let dir = tempfile::tempdir().unwrap();
         let reporter = crate::reporting::Reporter::new(dir.path());
-        let run = reporter.begin("run", "test", serde_json::json!({})).unwrap();
+        let run = reporter
+            .begin("run", "test", serde_json::json!({}))
+            .unwrap();
         let mut config = ModelsConfig::default();
         config.provider = "faux".into();
         config.default_model = "faux-model".into();
         config.fallback_models = vec!["missing".into(), "alternate".into()];
         let invoker = RoleInvoker::new(models, config).with_reporter(reporter);
-        let response = invoker.invoke_json::<serde_json::Value>(Role::SceneDirector, &serde_json::json!({})).await.unwrap();
+        let response = invoker
+            .invoke_json::<serde_json::Value>(Role::SceneDirector, &serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(response.model, "alternate");
         run.finish("accepted", serde_json::json!({})).unwrap();
-        let report: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.path().join("run-report.json")).unwrap()).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("run-report.json")).unwrap())
+                .unwrap();
         assert_eq!(report["model_attempts"], 2);
         assert_eq!(report["reported_tokens"], 8201);
         assert_eq!(report["failed_model_attempts"], 1);
@@ -535,11 +901,7 @@ mod retry_tests {
         ] {
             assert!(retryable_model_error(&SceneError::Model(message.into())));
         }
-        for message in [
-            "HTTP 401: unauthorized",
-            "HTTP 400: bad request",
-            "aborted",
-        ] {
+        for message in ["HTTP 401: unauthorized", "HTTP 400: bad request", "aborted"] {
             assert!(!retryable_model_error(&SceneError::Model(message.into())));
         }
         assert!(!retryable_model_error(&SceneError::Validation(

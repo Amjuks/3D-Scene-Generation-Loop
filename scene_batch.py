@@ -597,7 +597,7 @@ def prepare(args):
         path = args.resume.expanduser().resolve()
         if not (path / 'progress.json').is_file():
             raise ValueError('Resume path must contain progress.json')
-        if args.categories or args.name or args.config or getattr(args, 'briefs', None):
+        if args.categories or args.name or args.config or getattr(args, 'briefs', None) or getattr(args, 'fidelity', None) is not None or getattr(args, 'visual_review', None) is not None:
             raise ValueError('--resume uses saved categories, name, config, and briefs; do not supply those again')
         return path
     if args.categories is None:
@@ -615,9 +615,19 @@ def prepare(args):
         'version': 1, 'models': {'provider': 'soket', 'default_model': 'gemma-4-31b',
                                'fallback_models': ['gpt', 'qwen3-8-27b'], 'compact_planning': True},
         'backend': {'generator': 'blender', 'variation': 'procedural_pbr_v1', 'preview_renderer': 'cycles', 'exports': ['blend', 'glb']},
-        'quality': {'preview_resolution': [1600, 1200], 'preview_samples': 64, 'require_visual_review': False}}
+        'quality': {'preview_resolution': [1600, 1200], 'preview_samples': 64,
+                    'fidelity': 'realistic', 'require_visual_review': True}}
     if not isinstance(config, dict):
         raise ValueError('Config must be an existing JSON object')
+    fidelity, visual_review = getattr(args, 'fidelity', None), getattr(args, 'visual_review', None)
+    if visual_review is False and fidelity != 'concept':
+        raise ValueError('--skip-visual-review requires --fidelity concept; realistic output requires actual-image review')
+    if fidelity is not None:
+        config.setdefault('quality', {})['fidelity'] = fidelity
+        if fidelity == 'realistic':
+            config['quality']['require_visual_review'] = True
+    if visual_review is not None:
+        config.setdefault('quality', {})['require_visual_review'] = visual_review
     path = args.output.expanduser().resolve() / name
     path.mkdir(parents=True, exist_ok=False)
     for folder in ('scenes', 'planning', 'logs', 'inputs'):
@@ -638,6 +648,10 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=ROOT / 'scene-runs')
     parser.add_argument('--resume', type=Path)
     parser.add_argument('--config', type=Path)
+    parser.add_argument('--fidelity', choices=('realistic', 'concept'), help='New jobs default to realistic; concept permits procedural proxies')
+    review = parser.add_mutually_exclusive_group()
+    review.add_argument('--require-visual-review', dest='visual_review', action='store_true', default=None, help='Require image review (default for new jobs)')
+    review.add_argument('--skip-visual-review', dest='visual_review', action='store_false', help='Skip image review; requires --fidelity concept')
     parser.add_argument('--briefs', type=Path, help='JSON with common and category-specific scene constraints; saved for resume')
     parser.add_argument('--workers', type=int, default=1)
     parser.add_argument('--seed', type=int, default=0)
